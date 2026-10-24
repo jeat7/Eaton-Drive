@@ -221,7 +221,7 @@ public final class MapActivity extends Activity {
         removeRouteOverlay();
         if (destinationOverlay != null) mapView.getLayerManager().getLayers().remove(destinationOverlay);
         Paint fill = AndroidGraphicFactory.INSTANCE.createPaint();
-        fill.setColor(AndroidGraphicFactory.INSTANCE.createColor(DriveUi.TEAL));
+        fill.setColor(DriveUi.TEAL);
         fill.setStyle(Style.FILL);
         destinationOverlay = new FixedPixelCircle(target, DriveUi.dp(this, 10), fill, null);
         mapView.getLayerManager().getLayers().add(destinationOverlay);
@@ -244,7 +244,7 @@ public final class MapActivity extends Activity {
             }
             removeRouteOverlay();
             Paint stroke = AndroidGraphicFactory.INSTANCE.createPaint();
-            stroke.setColor(AndroidGraphicFactory.INSTANCE.createColor(DriveUi.TEAL));
+            stroke.setColor(DriveUi.TEAL);
             stroke.setStyle(Style.STROKE);
             stroke.setStrokeWidth(DriveUi.dp(this, 6));
             routeOverlay = new Polyline(stroke, AndroidGraphicFactory.INSTANCE);
