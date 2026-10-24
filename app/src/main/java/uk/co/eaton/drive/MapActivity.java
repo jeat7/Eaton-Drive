@@ -3,6 +3,8 @@ package uk.co.eaton.drive;
 import android.Manifest;
 import android.os.SystemClock;
 import android.net.Uri;
+import android.database.Cursor;
+import android.provider.OpenableColumns;
 import android.widget.EditText;
 import android.text.InputType;
 import android.app.Activity;
@@ -38,6 +40,9 @@ import org.mapsforge.map.android.view.MapView;
 import org.mapsforge.map.layer.cache.TileCache;
 import org.mapsforge.map.layer.renderer.TileRendererLayer;
 import org.mapsforge.map.reader.MapFile;
+import org.mapsforge.map.datastore.MultiMapDataStore;
+import java.util.Arrays;
+import java.util.Comparator;
 import org.mapsforge.map.rendertheme.internal.MapsforgeThemes;
 
 import java.io.File;
@@ -61,7 +66,7 @@ public final class MapActivity extends Activity {
     private TextView status, placeholder, speed;
     private GpsTracker gps;
     private Location lastFix;
-    private MapFile mapFileReader;
+    private MultiMapDataStore mapFileReader;
     private volatile boolean copying;
     private BRouterClient routing;
     private PostcodeStore postcodes;
@@ -83,9 +88,7 @@ public final class MapActivity extends Activity {
         routing = new BRouterClient(this);
         postcodes = new PostcodeStore(this);
         voice = new VoiceGuide(this);
-        File file = destinationFile();
-        if (file.isFile() && file.length() > 0) loadMap(file);
-        else setMessage("Import an offline Mapsforge .map file to begin.");
+        loadInstalledMaps();
     }
     private void buildScreen() {
         FrameLayout outer = new FrameLayout(this);
@@ -177,7 +180,7 @@ public final class MapActivity extends Activity {
         setMessage("Importing local offline map...");
         final android.net.Uri chosen = data.getData();
         io.execute(() -> {
-            File target = destinationFile();
+            File target = new File(destinationFile().getParentFile(), selectedMapFilename(chosen));
             File temporary = new File(target.getParentFile(), "incoming.map");
             String error = null;
             try (InputStream input = getContentResolver().openInputStream(chosen);
@@ -268,23 +271,58 @@ public final class MapActivity extends Activity {
         boolean on = voice.toggle();
         status.setText(on ? voice.status() : "Spoken guidance muted");
     }
-    private void loadMap(File file) {
+    private String selectedMapFilename(Uri selected) {
+        String supplied = null;
+        try (Cursor cursor = getContentResolver().query(selected,
+                new String[] {OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) supplied = cursor.getString(0);
+        } catch (Exception ignored) { }
+        if (supplied == null) supplied = "offline.map";
+        String safe = supplied.toLowerCase(Locale.UK).replaceAll("[^a-z0-9._-]", "_");
+        if (!safe.endsWith(".map") || safe.length() > 65 ||
+            safe.equals("incoming.map") || safe.equals("active.map")) {
+            safe = "imported-" + System.currentTimeMillis() + ".map";
+        }
+        return safe;
+    }
+    private void loadInstalledMaps() {
+        File directory = destinationFile().getParentFile();
+        File[] maps = directory.listFiles(file -> file.isFile()
+            && file.getName().toLowerCase(Locale.UK).endsWith(".map")
+            && file.length() > 1024L);
+        if (maps == null || maps.length == 0) {
+            setMessage("Import England, Wales or Scotland Mapsforge .map files");
+            return;
+        }
+        Arrays.sort(maps, Comparator.comparing(File::getName));
+        MultiMapDataStore combined = new MultiMapDataStore(MultiMapDataStore.DataPolicy.DEDUPLICATE);
         try {
-            mapFileReader = new MapFile(file);
+            int count = 0;
+            for (File file : maps) {
+                try {
+                    MapFile reader = new MapFile(file);
+                    combined.addMapDataStore(reader, count == 0, count == 0);
+                    count++;
+                } catch (Exception failed) {
+                    throw new IOException("Invalid " + file.getName() + ": " + failed.getMessage(), failed);
+                }
+            }
             TileCache cache = AndroidUtil.createTileCache(this, "eaton-map-cache",
                 mapView.getModel().displayModel.getTileSize(), 1f,
                 mapView.getModel().frameBufferModel.getOverdrawFactor());
-            TileRendererLayer renderer = new TileRendererLayer(cache, mapFileReader,
+            TileRendererLayer renderer = new TileRendererLayer(cache, combined,
                 mapView.getModel().mapViewPosition, AndroidGraphicFactory.INSTANCE);
             renderer.setXmlRenderTheme(MapsforgeThemes.MOTORIDER);
             mapView.getLayerManager().getLayers().add(renderer);
-            mapView.setCenter(mapFileReader.startPosition());
-            mapView.setZoomLevel(mapFileReader.startZoomLevel());
+            mapFileReader = combined;
+            mapView.setCenter(combined.startPosition());
+            mapView.setZoomLevel(combined.startZoomLevel());
             mapReady = true;
-            setMessage("Map ready • Select a destination using SET DEST • © OpenStreetMap contributors");
+            setMessage(count + " offline map(s) loaded • © OpenStreetMap contributors");
         } catch (Exception ex) {
+            combined.close();
             mapReady = false;
-            setMessage("Could not load map: " + ex.getMessage());
+            setMessage("Could not load offline maps: " + ex.getMessage());
         }
     }
     private void centreOnGps() {
