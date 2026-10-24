@@ -68,8 +68,8 @@ public final class OfflineRoadImporter {
     private void importOne(String filename, InputStream in, long[] total, Progress progress,
                            boolean fromZip) throws IOException {
         if (!RoadFileNames.isSegmentName(filename)) throw new IOException("Invalid routing filename");
-        File output = new File(directory, filename.toUpperCase(Locale.ROOT));
-        File part = new File(directory, filename.toUpperCase(Locale.ROOT) + ".incomplete");
+        File output = new File(directory, filename.substring(0, filename.lastIndexOf('.')).toUpperCase(Locale.ROOT) + ".rd5");
+        File part = new File(directory, output.getName() + ".incomplete");
         if (part.exists() && !part.delete()) throw new IOException("Cannot clear partial tile");
         progress.onProgress("Installing road tile " + filename);
         long count = 0;
