@@ -63,3 +63,7 @@ WARNING: v0.4 is an untested driving-navigation prototype. Test while parked bef
 - Road/street names and house numbers still need an independent searchable index sourced from permitted OpenStreetMap extracts. Visible map labels do not provide text search.
 - Updating the APK should keep maps in app-specific storage. Uninstalling or clearing app data can remove all offline maps.
 - Not yet tested with the car hardware or during driving; do not rely on this prototype for live directions.
+
+
+## Verified sample postcode
+Use **B1 1BB** (Birmingham) or **SW1A 1AA** (London) to verify the embedded lookup. Earlier setup messages suggested B1 1AA; it is not present in the September 2026 data, so please do not use it as the installation test.

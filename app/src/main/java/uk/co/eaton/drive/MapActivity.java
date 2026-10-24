@@ -264,7 +264,7 @@ public final class MapActivity extends Activity {
         }
         EditText input = new EditText(this);
         input.setSingleLine(true);
-        input.setHint("e.g. B1 1AA");
+        input.setHint("e.g. B1 1BB");
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS);
         new AlertDialog.Builder(this).setTitle("Offline postcode destination")
             .setView(input)
