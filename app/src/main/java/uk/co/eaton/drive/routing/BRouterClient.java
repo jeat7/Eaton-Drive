@@ -96,10 +96,10 @@ public final class BRouterClient {
         }
     }
 
-    /** BRouter compresses long GPX results with the ASCII z64 header. */
+    /** BRouter Base64-encodes a z64 header followed by gzip; the encoded prefix is ejY0. */
     static String decodeResponse(String value) throws Exception {
         if (value == null) throw new IllegalArgumentException("No routing response");
-        if (!value.startsWith("z64")) return value;
+        if (!value.startsWith("ejY0")) return value;
         byte[] bytes = Base64.decode(value, Base64.DEFAULT);
         if (bytes.length < 4 || bytes[0] != 'z' || bytes[1] != '6' || bytes[2] != '4')
             throw new IllegalArgumentException("Invalid compressed route");
