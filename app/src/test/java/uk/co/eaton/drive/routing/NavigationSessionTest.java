@@ -27,6 +27,18 @@ public class NavigationSessionTest {
         assertFalse(n.locate(far,7,63_000).reroute);
         assertFalse(n.locate(far,100,106_000).reroute);
     }
+    @Test public void doesNotRerouteOnSparseStraightRoad() throws Exception {
+        RouteParser.Route sparse = RouteParser.parse("<gpx><trk><trkseg>"
+            + "<trkpt lat='52.0' lon='-1.0'/>"
+            + "<trkpt lat='52.01' lon='-1.0'/>"
+            + "</trkseg></trk></gpx>");
+        NavigationSession n = new NavigationSession(sparse);
+        RouteParser.Point midway = new RouteParser.Point(52.005,-1);
+        assertTrue(NavigationSession.distanceToSegmentM(midway, sparse.points.get(0), sparse.points.get(1)) < 1);
+        assertFalse(n.locate(midway,6,100_000).reroute);
+        assertFalse(n.locate(midway,6,101_000).reroute);
+        assertFalse(n.locate(midway,6,102_000).reroute);
+    }
     @Test public void makesNoClaimsWhenTurnsMissing() throws Exception {
         RouteParser.Route noTurns = RouteParser.parse("<gpx><trk><trkseg>"
         +"<trkpt lat='52.0' lon='-1.0'/><trkpt lat='52.001' lon='-1.0'/>"

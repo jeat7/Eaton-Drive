@@ -40,9 +40,9 @@ public final class NavigationSession {
         double bestM = Double.POSITIVE_INFINITY;
         int best = progress;
         int from = Math.max(0, progress - 12);
-        int to = Math.min(pts.size() - 1, progress + 450);
+        int to = Math.min(pts.size() - 2, progress + 450);
         for (int i = from; i <= to; i++) {
-            double m = RouteParser.distanceMiles(gps, pts.get(i)) * 1609.344;
+            double m = distanceToSegmentM(gps, pts.get(i), pts.get(i + 1));
             if (m < bestM) { bestM = m; best = i; }
         }
         if (bestM > 85) {
@@ -83,6 +83,20 @@ public final class NavigationSession {
             speech = stage == 3 ? direction + " now" : "In " + distance + ", " + direction;
         }
         return new Update(direction + " in " + distance, speech, false, false);
+    }
+    /**
+     * Planar approximation at the local latitude; adequate for nearby GPS-to-road
+     * distances and unlike nearest-vertex comparisons handles sparse straight tracks.
+     */
+    static double distanceToSegmentM(RouteParser.Point gps, RouteParser.Point start, RouteParser.Point end) {
+        double scaleY = 111_195d;
+        double scaleX = scaleY * Math.cos(Math.toRadians(gps.lat));
+        double ax = (start.lon - gps.lon) * scaleX, ay = (start.lat - gps.lat) * scaleY;
+        double bx = (end.lon - gps.lon) * scaleX, by = (end.lat - gps.lat) * scaleY;
+        double dx = bx - ax, dy = by - ay;
+        double segment2 = dx*dx + dy*dy;
+        double t = segment2 < .0001 ? 0 : Math.max(0, Math.min(1, -(ax*dx+ay*dy)/segment2));
+        return Math.hypot(ax + dx*t, ay + dy*t);
     }
     public void failedReroute() { reroutePending = false; }
 }
