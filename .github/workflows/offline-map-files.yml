@@ -1,0 +1,34 @@
+name: Prepare Eaton Drive offline map files
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/offline-map-files.yml'
+permissions:
+  contents: read
+
+jobs:
+  maps:
+    name: Mapsforge ${{ matrix.region }} map
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        region: [england, scotland, wales]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Fetch and verify Mapsforge regional map
+        run: python scripts/fetch_offline_maps.py --region ${{ matrix.region }} --mode maps out/maps
+      - name: Upload regional map for USB transfer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Eaton-Drive-${{ matrix.region }}-offline-map
+          path: out/maps/
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error
