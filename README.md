@@ -1,4 +1,4 @@
-# Eaton Drive v0.4 — offline navigation prototype and Great Britain multi-map support
+# Eaton Drive v0.5 — offline navigation prototype with built-in postcode search
 
 Native Android 11-compatible landscape launcher for the Rimoodly 9-inch 1024×600 Suzuki Celerio head unit (advertised 1GB RAM, 16GB flash).
 
@@ -52,3 +52,14 @@ Android 11 advertised, 1GB RAM, 16GB storage, CPU and MCU unknown. Import databa
 Copy files onto USB; in navigation choose IMPORT MAP for each .map and IMPORT PCs for the postcode CSV.GZ (keep compressed). BRouter RD5 tiles must be installed in BRouter's own configured segment directory. An offline English TTS voice must also be installed through Android speech settings. See OFFLINE-DATA.md.
 
 WARNING: v0.4 is an untested driving-navigation prototype. Test while parked before setting as HOME or relying on directions.
+
+
+## v0.5 performance improvements
+- No postcode CSV import required. The APK contains a pre-indexed database of ~1.76 million Great Britain postcodes, prepared in CI and copied to app storage only on first use.
+- MAP DATA remains stored after closing Navigation. The map opens at the last saved viewport and automatically centres on a good first GPS fix, unless the user manually panned the map.
+- Mapsforge uses efficient tile-based reading for zoom and viewport; a GB map is NOT held entirely in RAM.
+- The DATA button reports postcode status; this replaces the old IMPORT PCs operation which was slow and could fail during large imports.
+- The built-in database increases APK size. The CI workflow generates the asset from https://postcodesuk.com/data-downloads/uk-postcodes (September 2026) and caches it.
+- Road/street names and house numbers still need an independent searchable index sourced from permitted OpenStreetMap extracts. Visible map labels do not provide text search.
+- Updating the APK should keep maps in app-specific storage. Uninstalling or clearing app data can remove all offline maps.
+- Not yet tested with the car hardware or during driving; do not rely on this prototype for live directions.

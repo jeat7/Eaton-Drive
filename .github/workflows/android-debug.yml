@@ -18,6 +18,28 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
+      - name: Restore pre-indexed postcode asset
+        uses: actions/cache@v4
+        with:
+          path: app/src/main/assets/gb-postcodes.db
+          key: eatondrive-gb-postcodes-2026-09-v5
+      - name: Generate built-in GB postcode database
+        shell: bash
+        run: |
+          if [ ! -s app/src/main/assets/gb-postcodes.db ]; then
+            python3 scripts/build_embedded_postcodes.py
+          else
+            echo "Using cached pre-indexed offline postcodes"
+          fi
+          python3 - <<'PY'
+          import sqlite3
+          path="app/src/main/assets/gb-postcodes.db"
+          with sqlite3.connect(f"file:{path}?mode=ro",uri=True) as db:
+              count=db.execute("SELECT COUNT(*) FROM postcodes").fetchone()[0]
+              assert count>1500000, count
+              assert db.execute("PRAGMA quick_check").fetchone()[0]=="ok"
+              print(f"Ready for APK: {count:,} indexed GB postcodes")
+          PY
       - name: Unit tests
         run: gradle :app:testDebugUnitTest --no-daemon
       - name: Assemble debug APK

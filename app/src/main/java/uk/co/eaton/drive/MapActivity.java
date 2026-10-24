@@ -14,6 +14,7 @@ import android.location.Location;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
+import android.view.MotionEvent;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
@@ -58,7 +59,6 @@ import uk.co.eaton.drive.ui.DriveUi;
 /** Foreground-only offline route guidance prototype with optional spoken turns. */
 public final class MapActivity extends Activity {
     private static final int IMPORT_MAP = 43;
-    private static final int IMPORT_POSTCODES = 44;
     private static final int LOCATION_REQUEST = 902;
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -74,6 +74,9 @@ public final class MapActivity extends Activity {
     private NavigationSession navigation;
     private boolean routeCalculating;
     private boolean stopped;
+    private boolean autoCentredOnGps;
+    private boolean userMovedMap;
+    private boolean preparingPostcodes;
     private RouteParser.Point destination;
     private Polyline routeOverlay;
     private FixedPixelCircle destinationOverlay;
@@ -89,6 +92,7 @@ public final class MapActivity extends Activity {
         postcodes = new PostcodeStore(this);
         voice = new VoiceGuide(this);
         loadInstalledMaps();
+        prepareBuiltInPostcodes();
     }
     private void buildScreen() {
         FrameLayout outer = new FrameLayout(this);
@@ -96,6 +100,10 @@ public final class MapActivity extends Activity {
         setContentView(outer);
         mapView = new MapView(this);
         mapView.setClickable(true);
+        mapView.setOnTouchListener((view, event) -> {
+            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) userMovedMap = true;
+            return false;
+        });
         mapView.setBuiltInZoomControls(true);
         mapView.getMapScaleBar().setVisible(true);
         outer.addView(mapView, new FrameLayout.LayoutParams(-1, -1));
@@ -125,7 +133,7 @@ public final class MapActivity extends Activity {
         addButton(row2, "START ROUTE", () -> calculateRoute(false));
         addButton(row2, "STOP", this::clearNavigation);
         addButton(row2, "IMPORT MAP", this::importMap);
-        addButton(row2, "IMPORT PCs", this::importPostcodes);
+        addButton(row2, "DATA", this::showDataStatus);
         outer.addView(toolbar, new FrameLayout.LayoutParams(-1, DriveUi.dp(this, 90), Gravity.TOP));
 
         LinearLayout footer = DriveUi.row(this);
@@ -171,10 +179,6 @@ public final class MapActivity extends Activity {
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (resultCode != RESULT_OK || data == null || data.getData() == null || copying) return;
-        if (requestCode == IMPORT_POSTCODES) {
-            importPostcodeFile(data.getData());
-            return;
-        }
         if (requestCode != IMPORT_MAP) return;
         copying = true;
         setMessage("Importing local offline map...");
@@ -218,33 +222,44 @@ public final class MapActivity extends Activity {
             });
         });
     }
-    private void importPostcodes() {
-        if (copying) return;
-        Intent pick = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-        pick.addCategory(Intent.CATEGORY_OPENABLE);
-        pick.setType("*/*");
-        startActivityForResult(pick, IMPORT_POSTCODES);
-    }
-    private void importPostcodeFile(Uri source) {
-        copying = true;
-        status.setText("Importing postcode records • This may take a while on 1GB RAM...");
+    /** Install a pre-indexed lookup from the APK on first launch, never parse CSV on-device. */
+    private void prepareBuiltInPostcodes() {
+        if (postcodes.installed()) return;
+        preparingPostcodes = true;
+        status.setText("Preparing built-in offline postcodes (first launch only)...");
         io.execute(() -> {
             String result;
             try {
-                int imported = postcodes.importCsv(source, rows ->
-                    main.post(() -> status.setText("Importing postcodes: " + rows + " records...")));
-                result = "Imported " + imported + " offline postcodes";
-            } catch (Exception failure) { result = "Postcode import failed: " + failure.getMessage(); }
-            final String message = result;
-            main.post(() -> { copying = false; status.setText(message); });
+                result = postcodes.ensureBundled();
+            } catch (Exception failure) {
+                String reason = failure.getMessage();
+                result = "Postcodes unavailable: " + (reason == null ? failure.getClass().getSimpleName() : reason);
+            }
+            String message = result;
+            main.post(() -> {
+                preparingPostcodes = false;
+                if (navigation == null && !routeCalculating) status.setText(message);
+            });
         });
+    }
+    private void showDataStatus() {
+        String message = (postcodes.installed()
+            ? "Offline Great Britain postcode search is ready."
+            : (preparingPostcodes ? "Postcode data is being prepared on this device."
+                : "The built-in postcode database is unavailable. Check storage and reinstall the current APK."))
+            + "\n\nYour offline map files remain saved between launches."
+            + "\nMap regions are rendered as needed near the screen position."
+            + "\n\nPostcode data: Postcodes UK, September 2026. GB only. Offline map © OpenStreetMap contributors.";
+        new AlertDialog.Builder(this).setTitle("Offline data")
+            .setMessage(message).setPositiveButton("OK", null).show();
     }
     private void enterPostcode() {
         if (!postcodes.installed()) {
-            new AlertDialog.Builder(this).setTitle("Postcode database needed")
-                .setMessage("Import a local CSV or CSV.GZ file with postcode,latitude,longitude columns. Great Britain open data is available from Open Postcode Geo; Northern Ireland requires a separately licensed data source.")
-                .setPositiveButton("Import", (d,w) -> importPostcodes())
-                .setNegativeButton("Cancel", null).show();
+            new AlertDialog.Builder(this).setTitle("Offline postcodes")
+                .setMessage(preparingPostcodes
+                    ? "Preparing the built-in postcode database. This only happens after the first installation."
+                    : "Postcode data is not ready. Check that the latest APK was installed and at least 100MB storage is free.")
+                .setPositiveButton("OK", null).show();
             return;
         }
         EditText input = new EditText(this);
@@ -317,6 +332,7 @@ public final class MapActivity extends Activity {
             mapFileReader = combined;
             mapView.setCenter(combined.startPosition());
             mapView.setZoomLevel(combined.startZoomLevel());
+            restoreLastMapPosition();
             mapReady = true;
             setMessage(count + " offline map(s) loaded • © OpenStreetMap contributors");
         } catch (Exception ex) {
@@ -324,6 +340,34 @@ public final class MapActivity extends Activity {
             mapReady = false;
             setMessage("Could not load offline maps: " + ex.getMessage());
         }
+    }
+    /** Restore previous viewport while awaiting an accurate GPS fix. */
+    private void restoreLastMapPosition() {
+        try {
+            String lat = getPreferences(0).getString("map_lat", null);
+            String lon = getPreferences(0).getString("map_lon", null);
+            if (lat != null && lon != null) {
+                double latitude = Double.parseDouble(lat);
+                double longitude = Double.parseDouble(lon);
+                if (Double.isFinite(latitude) && Double.isFinite(longitude)
+                    && latitude >= -90 && latitude <= 90
+                    && longitude >= -180 && longitude <= 180) {
+                    mapView.setCenter(new LatLong(latitude, longitude));
+                    int zoom = getPreferences(0).getInt("map_zoom", 14);
+                    mapView.setZoomLevel((byte)Math.max(3,Math.min(19,zoom)));
+                }
+            }
+        } catch (RuntimeException ignored) { }
+    }
+    private void saveLastMapPosition() {
+        if (!mapReady) return;
+        LatLong position = mapView.getModel().mapViewPosition.getCenter();
+        if (position == null) return;
+        getPreferences(0).edit()
+            .putString("map_lat",Double.toString(position.latitude))
+            .putString("map_lon",Double.toString(position.longitude))
+            .putInt("map_zoom",mapView.getZoomLevel())
+            .apply();
     }
     private void centreOnGps() {
         if (!mapReady) { Toast.makeText(this, "Import a map first", Toast.LENGTH_SHORT).show(); return; }
@@ -426,6 +470,13 @@ public final class MapActivity extends Activity {
     private void onGps(Integer mph, String state, Location location) {
         speed.setText(mph == null ? "— MPH" : mph + " MPH");
         lastFix = location;
+        if (location != null && mapReady && !autoCentredOnGps && !userMovedMap
+            && location.hasAccuracy() && location.getAccuracy() <= 60f
+            && navigation == null && destination == null) {
+            mapView.setCenter(new LatLong(location.getLatitude(), location.getLongitude()));
+            mapView.setZoomLevel((byte)15);
+            autoCentredOnGps = true;
+        }
         if (navigation == null || location == null || stopped || routeCalculating) return;
         NavigationSession.Update update = navigation.locate(
             new RouteParser.Point(location.getLatitude(), location.getLongitude()),
@@ -451,6 +502,7 @@ public final class MapActivity extends Activity {
         if (code == LOCATION_REQUEST && gps != null) gps.start();
     }
     @Override protected void onPause() {
+        saveLastMapPosition();
         if (gps != null) gps.stop();
         super.onPause();
     }

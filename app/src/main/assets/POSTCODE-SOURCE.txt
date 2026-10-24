@@ -1,0 +1,9 @@
+Eaton Drive GB postcodes (September 2026 source).
+Source: Postcodes UK (postcodesuk.com), UK Postcodes, September 2026.
+https://postcodesuk.com/data-downloads/uk-postcodes
+Contains public sector information licensed under OGL v3.0.
+Contains OS data © Crown copyright and database right 2026.
+Contains Royal Mail data © Royal Mail copyright and database right 2026.
+Source: Office for National Statistics licensed under OGL v3.0.
+NI/Belfast (BT) postcodes excluded pending Land & Property Services licensing.
+Postcode points are approximate centroids, not street addresses.
