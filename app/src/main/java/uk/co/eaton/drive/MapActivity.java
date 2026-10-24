@@ -28,7 +28,9 @@ import org.mapsforge.core.graphics.Paint;
 import org.mapsforge.core.graphics.Style;
 import org.mapsforge.map.layer.overlay.Polyline;
 import org.mapsforge.map.layer.overlay.FixedPixelCircle;
-import uk.co.eaton.drive.routing.BRouterClient;
+import uk.co.eaton.drive.routing.EmbeddedRouter;
+import uk.co.eaton.drive.routing.OfflineRoadImporter;
+import java.util.List;
 import uk.co.eaton.drive.routing.RouteParser;
 import uk.co.eaton.drive.routing.NavigationSession;
 import uk.co.eaton.drive.routing.VoiceGuide;
@@ -59,6 +61,7 @@ import uk.co.eaton.drive.ui.DriveUi;
 /** Foreground-only offline route guidance prototype with optional spoken turns. */
 public final class MapActivity extends Activity {
     private static final int IMPORT_MAP = 43;
+    private static final int IMPORT_ROADS = 45;
     private static final int LOCATION_REQUEST = 902;
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -68,7 +71,7 @@ public final class MapActivity extends Activity {
     private Location lastFix;
     private MultiMapDataStore mapFileReader;
     private volatile boolean copying;
-    private BRouterClient routing;
+    private EmbeddedRouter routing;
     private PostcodeStore postcodes;
     private VoiceGuide voice;
     private NavigationSession navigation;
@@ -88,7 +91,7 @@ public final class MapActivity extends Activity {
         AndroidGraphicFactory.createInstance(getApplication());
         buildScreen();
         gps = new GpsTracker(this, this::onGps);
-        routing = new BRouterClient(this);
+        routing = new EmbeddedRouter(this);
         postcodes = new PostcodeStore(this);
         voice = new VoiceGuide(this);
         loadInstalledMaps();
@@ -134,6 +137,7 @@ public final class MapActivity extends Activity {
         addButton(row2, "STOP", this::clearNavigation);
         addButton(row2, "IMPORT MAP", this::importMap);
         addButton(row2, "DATA", this::showDataStatus);
+        addButton(row2, "ROADS", this::configureRoads);
         outer.addView(toolbar, new FrameLayout.LayoutParams(-1, DriveUi.dp(this, 90), Gravity.TOP));
 
         LinearLayout footer = DriveUi.row(this);
@@ -178,8 +182,12 @@ public final class MapActivity extends Activity {
     }
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (resultCode != RESULT_OK || data == null || data.getData() == null || copying) return;
-        if (requestCode != IMPORT_MAP) return;
+        if (resultCode != RESULT_OK || data == null || copying) return;
+        if (requestCode == IMPORT_ROADS) {
+            importRoadDocuments(data);
+            return;
+        }
+        if (requestCode != IMPORT_MAP || data.getData() == null) return;
         copying = true;
         setMessage("Importing local offline map...");
         final android.net.Uri chosen = data.getData();
@@ -252,6 +260,59 @@ public final class MapActivity extends Activity {
             + "\n\nPostcode data: Postcodes UK, September 2026. GB only. Offline map © OpenStreetMap contributors.";
         new AlertDialog.Builder(this).setTitle("Offline data")
             .setMessage(message).setPositiveButton("OK", null).show();
+    }
+    private void configureRoads() {
+        int count = routing.segmentCount();
+        String intro = count > 0
+            ? count + " offline driving tile(s) installed. Your route engine is built into Eaton Drive."
+            : "The offline routing engine is built into Eaton Drive. It needs local road tiles once.";
+        new AlertDialog.Builder(this)
+            .setTitle("Offline driving roads")
+            .setMessage(intro + "\n\nSelect the BRouter UK routing ZIP you downloaded, or select multiple .rd5 files. Eaton Drive will store them automatically; no second app or account is needed."
+                + "\n\nLeave at least 200MB free. You do not need to reimport the roads on every launch.")
+            .setPositiveButton("Choose routing files", (d, w) -> pickRoads())
+            .setNegativeButton("Close", null).show();
+    }
+    private void pickRoads() {
+        if (copying) return;
+        Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        picker.addCategory(Intent.CATEGORY_OPENABLE);
+        picker.setType("*/*");
+        picker.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+        startActivityForResult(picker, IMPORT_ROADS);
+    }
+    private void importRoadDocuments(Intent data) {
+        List<Uri> documents = new ArrayList<>();
+        if (data.getClipData() != null) {
+            for (int i = 0; i < data.getClipData().getItemCount(); i++)
+                documents.add(data.getClipData().getItemAt(i).getUri());
+        } else if (data.getData() != null) {
+            documents.add(data.getData());
+        }
+        if (documents.isEmpty()) {
+            status.setText("No routing files chosen");
+            return;
+        }
+        copying = true;
+        status.setText("Installing local driving roads...");
+        io.execute(() -> {
+            String result;
+            try {
+                int imported = new OfflineRoadImporter(this, routing.roadDirectory())
+                    .importDocuments(documents, message -> main.post(() -> status.setText(message)));
+                result = "Installed " + imported + " offline routing tiles. Driving-route calculation is ready for testing.";
+            } catch (Exception ex) {
+                String reason = ex.getMessage();
+                result = "Road installation failed: " +
+                    (reason == null ? ex.getClass().getSimpleName() : reason);
+            }
+            String outcome = result;
+            main.post(() -> {
+                copying = false;
+                status.setText(outcome);
+                new AlertDialog.Builder(this).setTitle("Road data").setMessage(outcome).setPositiveButton("OK",null).show();
+            });
+        });
     }
     private void enterPostcode() {
         if (!postcodes.installed()) {
@@ -396,6 +457,7 @@ public final class MapActivity extends Activity {
     }
     private void calculateRoute(boolean automatic) {
         if (!mapReady) { Toast.makeText(this, "Import a map first", Toast.LENGTH_LONG).show(); return; }
+        if (routing.segmentCount() == 0) { configureRoads(); return; }
         if (destination == null) { Toast.makeText(this, "Pan the map to the destination and press SET DEST", Toast.LENGTH_LONG).show(); return; }
         if (lastFix == null || !lastFix.hasAccuracy() || lastFix.getAccuracy() > 45f) {
             status.setText("Waiting for accurate GPS to calculate the route"); return;
@@ -413,8 +475,8 @@ public final class MapActivity extends Activity {
                 status.setText("Route unavailable: " + error);
                 if (navigation != null) navigation.failedReroute();
                 if (!automatic) new AlertDialog.Builder(this).setTitle("Offline route unavailable")
-                    .setMessage(error + "\n\nBRouter and its local driving (.rd5) segments are required.")
-                    .setPositiveButton("BRouter setup", (d,w) -> openBRouterSetup())
+                    .setMessage(error + "\n\nCheck that the destination is within the downloaded UK road coverage. You can import more road tiles using ROADS.")
+                    .setPositiveButton("Manage roads", (d,w) -> configureRoads())
                     .setNegativeButton("Close", null).show();
                 return;
             }
@@ -437,17 +499,6 @@ public final class MapActivity extends Activity {
             mapView.setCenter(new LatLong(start.lat, start.lon));
             mapView.setZoomLevel((byte) 16);
         });
-    }
-    private void openBRouterSetup() {
-        try {
-            Intent setup = new Intent();
-            setup.setClassName("btools.routingapp", "btools.routingapp.BRouterActivity");
-            startActivity(setup);
-        } catch (Exception ex) {
-            new AlertDialog.Builder(this).setTitle("BRouter not installed")
-                .setMessage("Install the BRouter Android app from a trusted source, open it, choose motorcar routing and download local routing segments covering your region. Then come back to Eaton Drive.")
-                .setPositiveButton("OK", null).show();
-        }
     }
     private void removeRouteOverlay() {
         if (routeOverlay != null) {

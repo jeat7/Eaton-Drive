@@ -8,8 +8,21 @@ android {
         applicationId 'uk.co.eaton.drive'
         minSdk 23
         targetSdk 32
-        versionCode 6
-        versionName '0.5.1'
+        versionCode 7
+        versionName '0.6.0'
+    }
+    sourceSets {
+        main {
+            // CI checks out BRouter 1.7.10 sources pinned to a fixed upstream commit.
+            // These modules are pure Java and are compiled into our one Android APK.
+            java.srcDirs += [
+                "$rootDir/vendor/brouter/brouter-core/src/main/java",
+                "$rootDir/vendor/brouter/brouter-mapaccess/src/main/java",
+                "$rootDir/vendor/brouter/brouter-util/src/main/java",
+                "$rootDir/vendor/brouter/brouter-expressions/src/main/java",
+                "$rootDir/vendor/brouter/brouter-codec/src/main/java"
+            ]
+        }
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17

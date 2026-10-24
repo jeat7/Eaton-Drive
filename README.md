@@ -1,4 +1,4 @@
-# Eaton Drive v0.5 — offline navigation prototype with built-in postcode search
+# Eaton Drive v0.6 — offline routing integrated
 
 Native Android 11-compatible landscape launcher for the Rimoodly 9-inch 1024×600 Suzuki Celerio head unit (advertised 1GB RAM, 16GB flash).
 
@@ -67,3 +67,13 @@ WARNING: v0.4 is an untested driving-navigation prototype. Test while parked bef
 
 ## Verified sample postcode
 Use **B1 1BB** (Birmingham) or **SW1A 1AA** (London) to verify the embedded lookup. Earlier setup messages suggested B1 1AA; it is not present in the September 2026 data, so please do not use it as the installation test.
+
+## v0.6: built-in BRouter engine
+- The MIT-licensed BRouter Java core v1.7.10 is compiled into Eaton Drive. No separate BRouter Android installation or service-mode configuration is required.
+- Upstream sources pinned to git commit 4d2639af77ea5ed9c30d3e400764eb6f9e8522da, compiled in GitHub Actions, with upstream MIT notice included as an APK asset.
+- The car-vario.brf driving profile is included in the APK.
+- For offline road data, in Eaton Drive go to Navigation > ROADS > Choose routing files, and select the downloaded Eaton-Drive-GB-BRouter-Routing.zip or individually selected .rd5 tiles. Routing tiles persist in app storage.
+- Regional Mapsforge .map files and built-in GB postcodes continue working without change.
+- No Internet permission, no firmware flashing, no account, no vendor BRouter installation.
+- You may need to back up your maps and other app data before uninstalling a debug build; debug APK signing keys may differ between builds.
+- Warning: route correctness on an actual vehicle is not yet validated. Use only for stationary testing until verified.

@@ -10,6 +10,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Fetch MIT-licensed BRouter routing core (pinned v1.7.10)
+        uses: actions/checkout@v4
+        with:
+          repository: abrensch/brouter
+          ref: 4d2639af77ea5ed9c30d3e400764eb6f9e8522da
+          path: vendor/brouter
+          persist-credentials: false
+      - name: Bundle driving profile and open-source licence
+        run: |
+          mkdir -p app/src/main/assets/brouter
+          cp vendor/brouter/misc/profiles2/car-vario.brf app/src/main/assets/brouter/car-vario.brf
+          cp vendor/brouter/LICENSE app/src/main/assets/brouter/LICENSE.txt
+          test -s app/src/main/assets/brouter/car-vario.brf
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
