@@ -366,7 +366,7 @@ public final class MapActivity extends Activity {
         getPreferences(0).edit()
             .putString("map_lat",Double.toString(position.latitude))
             .putString("map_lon",Double.toString(position.longitude))
-            .putInt("map_zoom",mapView.getZoomLevel())
+            .putInt("map_zoom",mapView.getModel().mapViewPosition.getZoomLevel())
             .apply();
     }
     private void centreOnGps() {
