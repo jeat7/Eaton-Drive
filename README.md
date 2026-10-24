@@ -1,51 +1,42 @@
-# Eaton Drive
-Native Android 11-compatible landscape launcher and offline map-viewer prototype for a Suzuki Celerio aftermarket 9-inch (1024 × 600) head unit with advertised 1 GB RAM and 16 GB storage.
+# Eaton Drive v0.3 — offline navigation prototype
 
-**Status: v0.2 offline-route-preview prototype; Android head unit untested. Still not finished turn-by-turn navigation.**
+Native Android 11-compatible landscape launcher for the Rimoodly 9-inch 1024×600 Suzuki Celerio head unit (advertised 1GB RAM, 16GB flash).
 
-## Included
-- Eaton colour scheme (#07111F midnight navy, #0D1A2B panels, #2ED3B7 teal) with four oversized launch tiles.
-- GPS-provided speed in **MPH**, independent of map use. Displays a dash when a fix is missing or stale (older than 6 seconds).
-- Optional Android HOME launcher; no firmware modification, rooting, or disabling the OEM radio/reversing camera.
-- Assignable Radio/Music/Phone shortcuts to launchable installed head-unit apps; long-press a tile to reassign.
-- **Embedded offline Mapsforge map viewer**: import a local .map, pan/zoom, centre on GPS, and see MPH.
-- **Offline driving route previews**: requires the separately installed BRouter app and local .rd5 routing segments. Pan map to destination, press SET DEST, then ROUTE after obtaining a GPS fix; route rendered as a teal line with distance in miles. No network required after provisioning.
-- No internet permission, data collection, or cloud backend. Location is foreground-only.
-- Android debug APK build in GitHub Actions, plus speed tests.
+## Implemented
+- Eaton navy/teal launcher; improved nav-pin road/arrow scalable launcher icon.
+- GPS MPH speedometer on Home and Maps even without data connection; lost fix displays an em dash.
+- Offline Mapsforge .map renderer with local import.
+- BRouter offline motorcar route calculation: requires separately-installed BRouter, car profile and appropriate offline .rd5 files.
+- **Postcode search**: on-device SQLite database; CSV/CSV.GZ **with postcode,latitude,longitude columns** imported once. No internet queries. Recommended public source: Open Postcode Geo (GB; NI not included). Lookup accepts spaces/case variations.
+- **Spoken turn guidance** from BRouter OsmAnd-format GPX turn tags (when present), using an installed OFFLINE English Android voice; reports missing voices or missing turn data, never fabricates turns.
+- **Automatic offline rerouting** while navigation screen remains in the foreground: after three sufficiently accurate GPS fixes more than ~85 metres away from nearby route points, with a 40-second cooldown. Route is recalculated by local BRouter.
+- No Android internet permission or telemetry; preserves OEM radio, camera and MCU. Remains opt-in HOME launcher.
+- Local Java unit tests for postcode parsing, turn parsing, guidance/reroute and speed conversion.
 
-## Not yet implemented
-Offline postcode/address search, voice guidance, turn-by-turn instructions, rerouting, route progress, and GPS road-snapping remain unimplemented. GPS is needed for route origin. This is a ROUTE PREVIEW only; it must not be relied upon for live directions.
+## IMPORTANT: status and safety
+Build validation is not in-car validation. This is a **development prototype**, not production-quality car navigation. No live vehicle testing, route-hint compatibility testing against installed BRouter, road snapping, navigational error study, or real-world GPS reception validation yet. Never rely solely on it for navigation. No steering wheel controls, reverse camera, or OEM launch integration verified.
+
+Turns are only spoken if BRouter GPX supplies supported turn tags (`<rtept><extensions><turn>TL</turn>...`). Missing hints mean no reliable spoken instructions. Route guidance is active only when the navigation screen remains open; it intentionally stops when leaving the app. It uses coarse thresholds, can miss turns at complex junctions, and cannot account for road closures or traffic.
 
 ## Build
-Requires Android SDK 35, Java 17 and Gradle 8.7:
-```bash
+GitHub Actions → Eaton Drive Android debug APK, or Java 17 + Android SDK 35 + Gradle 8.7:
+```
 gradle :app:testDebugUnitTest
 gradle :app:assembleDebug
 ```
-Alternatively use **Actions → Eaton Drive Android debug APK**. A successful run publishes an artifact named `Eaton-Drive-debug-APK`; unzip it to get `app-debug.apk`. Builds are unverified until the workflow reports success.
 
-## Offline maps
-The app does not bundle map data. Get a compatible **Mapsforge .map**, preferably a small area for testing, and choose **Navigation → Import map**. Do not select .osm.pbf, .mbtiles or an unrelated ZIP.
-Map download index: https://download.mapsforge.org/maps/v5/europe/united-kingdom/
+## Initial offline setup (on Wi-Fi during preparation only)
+1. Install v0.3 debug APK (prefer Android 11 test device before head-unit installation). Grant precise location and enable GPS.
+2. Download a compatible Mapsforge .map for your chosen region from https://download.mapsforge.org/maps/v5/europe/united-kingdom/ and choose **IMPORT MAP**. Large maps require substantial spare flash.
+3. Install official BRouter from F-Droid or BRouter's official distribution; open BRouter, download the **.rd5** routing segments for the same region and configure **motorcar_fast** service mapping with an available car profile. .rd5 files are separate from .map files.
+4. Download the free, attributable **Open Postcode Geo** CSV from https://www.getthedata.com/open-postcode-geo on a computer. It contains postcode, latitude and longitude. Copy to USB and choose **IMPORT PCs** (CSV or gzipped CSV). Import is performed in small memory batches but can be slow; SQLite storage is additional to the maps. **Great Britain only** with this data; Northern Ireland requires a separately licensed source. Other pre-geocoded CSVs using postcode,latitude,longitude headers are accepted if you have usage rights.
+5. With GPS fix, enter a postcode via **POSTCODE**, then press **START ROUTE**. Or pan map to a location and choose **MAP DEST**. Keep navigation screen visible for voice and off-route detection.
+6. Android must have an **offline British/English text-to-speech voice** installed to speak turns. The VOICE button toggles speech and reveals readiness status.
 
-The app copies the file into its private external storage. A 1 GB map can require over 1 GB of free space; leave room for the operating system and temporary import file. Map data and overlays are credited to © OpenStreetMap contributors, with provider-specific licences to be reviewed.
+Postcode coordinates are centroids, not exact building entrances. If routing fails, check offline BRouter profile/segments first. No map data, routing segments or postcode datasets are bundled in the APK. Credits: © OpenStreetMap contributors, © Crown copyright and database right (Ordnance Survey), Open Government Licence v3.0, with source-specific attribution as applicable.
 
-## Route preview setup (v0.2)
-BRouter is a **separate offline routing engine**. Install it from its official Android/F-Droid distribution, open the app to initialise, and download **.rd5 segment(s)** for your driving region using BRouter's download manager. Ensure motorcar_fast is configured with an available car routing profile. These are separate from the Mapsforge .map display files. Once installed, offline routing requests happen through BRouter's Android service while the route itself is drawn inside Eaton Drive.
+## Rollback
+Test as a normal app; do not set as default launcher until radio, Bluetooth, reversing camera and GPS are tested while parked. To revert, open Eaton Drive → Android Settings → Change default home app and select the OEM launcher. Never flash firmware.
 
-In Eaton Drive's navigation screen: import a compatible .map, pan the map so the centre aligns with your destination, press **SET DEST**, wait for fresh GPS, then press **ROUTE**. A teal driving route and total miles should appear if BRouter is properly configured. BRouter can be launched for setup from any route-error dialog.
-
-**This is not voice-guided navigation yet.** Destination selection is by map centre, not by postcode.
-
-## Install and rollback
-1. Prefer testing on an Android 11 phone/tablet first.
-2. Install the APK on the head unit from USB, if the OEM allows APK installation.
-3. Launch Eaton Drive **as a normal app**, not as the HOME launcher. Grant precise-location permission and enable GPS.
-4. While safely parked, verify GPS, map, steering controls, radio, Bluetooth and reverse-camera behaviour before making Eaton Drive the default HOME app.
-5. If supported, change the home app via Eaton Drive → Android Settings → Change default home app.
-6. Roll back via Android Settings → Apps → Default apps → Home app → the original OEM launcher. Do not flash or modify firmware.
-
-Hardware processor/MCU, install permissions, GPS availability, OEM application package names and performance on 1 GB RAM remain unknown.
-
-## Dependencies
-Mapsforge 0.25.0 (LGPL licence) from Maven Central. Map data licences vary. No map download or map file is bundled.
+## Technical constraints
+Android 11 advertised, 1GB RAM, 16GB storage, CPU and MCU unknown. Import database is disk-backed rather than loaded into memory. Avoid importing huge datasets if storage is low. Navigation response parser limits GPX size to 12MB/75,000 points. Routing and TTS remain experimental until real-device testing.

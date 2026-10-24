@@ -58,7 +58,7 @@ public final class BRouterClient {
                         args.putString("trackFormat", "gpx");
                         args.putString("maxRunningTime", "45");
                         args.putString("acceptCompressedResult", "true");
-                        args.putInt("timode", 3);
+                        args.putString("turnInstructionFormat", "osmand");
                         String response = service.getTrackFromParams(args);
                         route = RouteParser.parse(decodeResponse(response));
                     } catch (Exception problem) {

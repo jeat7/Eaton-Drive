@@ -1,6 +1,10 @@
 package uk.co.eaton.drive;
 
 import android.Manifest;
+import android.os.SystemClock;
+import android.net.Uri;
+import android.widget.EditText;
+import android.text.InputType;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
@@ -23,6 +27,9 @@ import org.mapsforge.map.layer.overlay.Polyline;
 import org.mapsforge.map.layer.overlay.FixedPixelCircle;
 import uk.co.eaton.drive.routing.BRouterClient;
 import uk.co.eaton.drive.routing.RouteParser;
+import uk.co.eaton.drive.routing.NavigationSession;
+import uk.co.eaton.drive.routing.VoiceGuide;
+import uk.co.eaton.drive.postcode.PostcodeStore;
 import java.util.ArrayList;
 import java.util.Locale;
 import org.mapsforge.map.android.graphics.AndroidGraphicFactory;
@@ -43,9 +50,10 @@ import java.util.concurrent.Executors;
 import uk.co.eaton.drive.gps.GpsTracker;
 import uk.co.eaton.drive.ui.DriveUi;
 
-/** Offline local vector-map VIEWER; not turn-by-turn navigation yet. */
+/** Foreground-only offline route guidance prototype with optional spoken turns. */
 public final class MapActivity extends Activity {
     private static final int IMPORT_MAP = 43;
+    private static final int IMPORT_POSTCODES = 44;
     private static final int LOCATION_REQUEST = 902;
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -56,6 +64,11 @@ public final class MapActivity extends Activity {
     private MapFile mapFileReader;
     private volatile boolean copying;
     private BRouterClient routing;
+    private PostcodeStore postcodes;
+    private VoiceGuide voice;
+    private NavigationSession navigation;
+    private boolean routeCalculating;
+    private boolean stopped;
     private RouteParser.Point destination;
     private Polyline routeOverlay;
     private FixedPixelCircle destinationOverlay;
@@ -68,6 +81,8 @@ public final class MapActivity extends Activity {
         buildScreen();
         gps = new GpsTracker(this, this::onGps);
         routing = new BRouterClient(this);
+        postcodes = new PostcodeStore(this);
+        voice = new VoiceGuide(this);
         File file = destinationFile();
         if (file.isFile() && file.length() > 0) loadMap(file);
         else setMessage("Import an offline Mapsforge .map file to begin.");
@@ -85,24 +100,30 @@ public final class MapActivity extends Activity {
         placeholder.setGravity(Gravity.CENTER);
         placeholder.setBackgroundColor(DriveUi.BG);
         FrameLayout.LayoutParams placeholderLp = new FrameLayout.LayoutParams(-1, -1);
-        placeholderLp.topMargin = DriveUi.dp(this, 61);
+        placeholderLp.topMargin = DriveUi.dp(this, 90);
         placeholderLp.bottomMargin = DriveUi.dp(this, 63);
         outer.addView(placeholder, placeholderLp);
 
-        LinearLayout toolbar = DriveUi.row(this);
-        toolbar.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout toolbar = DriveUi.column(this);
         toolbar.setBackgroundColor(DriveUi.BG);
-        DriveUi.pad(this, toolbar, 12, 5);
-        addButton(toolbar, "‹  BACK", this::finish);
+        DriveUi.pad(this, toolbar, 5, 2);
+        LinearLayout row1 = DriveUi.row(this);
+        LinearLayout row2 = DriveUi.row(this);
+        toolbar.addView(row1, new LinearLayout.LayoutParams(-1, DriveUi.dp(this, 43)));
+        toolbar.addView(row2, new LinearLayout.LayoutParams(-1, DriveUi.dp(this, 43)));
+        addButton(row1, "‹ BACK", this::finish);
         TextView title = DriveUi.text(this, "EATON  /  NAVIGATION", 17, DriveUi.TEXT, true);
         title.setGravity(Gravity.CENTER);
-        toolbar.addView(title, DriveUi.weighted(0, -1, 1f));
-        addButton(toolbar, "⌖ GPS", this::centreOnGps);
-        addButton(toolbar, "SET DEST", this::selectMapCentre);
-        addButton(toolbar, "ROUTE", this::calculateRoute);
-        addButton(toolbar, "CLEAR", this::clearNavigation);
-        addButton(toolbar, "MAP FILE", this::importMap);
-        outer.addView(toolbar, new FrameLayout.LayoutParams(-1, DriveUi.dp(this, 61), Gravity.TOP));
+        row1.addView(title, DriveUi.weighted(0, -1, 1f));
+        addButton(row1, "GPS", this::centreOnGps);
+        addButton(row1, "VOICE", this::toggleVoice);
+        addButton(row2, "POSTCODE", this::enterPostcode);
+        addButton(row2, "MAP DEST", this::selectMapCentre);
+        addButton(row2, "START ROUTE", () -> calculateRoute(false));
+        addButton(row2, "STOP", this::clearNavigation);
+        addButton(row2, "IMPORT MAP", this::importMap);
+        addButton(row2, "IMPORT PCs", this::importPostcodes);
+        outer.addView(toolbar, new FrameLayout.LayoutParams(-1, DriveUi.dp(this, 90), Gravity.TOP));
 
         LinearLayout footer = DriveUi.row(this);
         footer.setGravity(Gravity.CENTER_VERTICAL);
@@ -115,10 +136,10 @@ public final class MapActivity extends Activity {
         outer.addView(footer, new FrameLayout.LayoutParams(-1, DriveUi.dp(this, 63), Gravity.BOTTOM));
     }
     private void addButton(LinearLayout row, String label, Runnable action) {
-        TextView button = DriveUi.text(this, label, 13, DriveUi.TEAL, true);
+        TextView button = DriveUi.text(this, label, 12, DriveUi.TEAL, true);
         button.setGravity(Gravity.CENTER);
         button.setBackground(DriveUi.bg(this, DriveUi.PANEL2, 10, true));
-        button.setPadding(DriveUi.dp(this, 10), 0, DriveUi.dp(this, 10), 0);
+        button.setPadding(DriveUi.dp(this, 7), 0, DriveUi.dp(this, 7), 0);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -1);
         lp.setMargins(DriveUi.dp(this, 3), DriveUi.dp(this, 3), DriveUi.dp(this, 3), DriveUi.dp(this, 3));
         row.addView(button, lp);
@@ -146,7 +167,12 @@ public final class MapActivity extends Activity {
     }
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != IMPORT_MAP || resultCode != RESULT_OK || data == null || data.getData() == null || copying) return;
+        if (resultCode != RESULT_OK || data == null || data.getData() == null || copying) return;
+        if (requestCode == IMPORT_POSTCODES) {
+            importPostcodeFile(data.getData());
+            return;
+        }
+        if (requestCode != IMPORT_MAP) return;
         copying = true;
         setMessage("Importing local offline map...");
         final android.net.Uri chosen = data.getData();
@@ -189,6 +215,59 @@ public final class MapActivity extends Activity {
             });
         });
     }
+    private void importPostcodes() {
+        if (copying) return;
+        Intent pick = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        pick.addCategory(Intent.CATEGORY_OPENABLE);
+        pick.setType("*/*");
+        startActivityForResult(pick, IMPORT_POSTCODES);
+    }
+    private void importPostcodeFile(Uri source) {
+        copying = true;
+        status.setText("Importing postcode records • This may take a while on 1GB RAM...");
+        io.execute(() -> {
+            String result;
+            try {
+                int imported = postcodes.importCsv(source, rows ->
+                    main.post(() -> status.setText("Importing postcodes: " + rows + " records...")));
+                result = "Imported " + imported + " offline postcodes";
+            } catch (Exception failure) { result = "Postcode import failed: " + failure.getMessage(); }
+            final String message = result;
+            main.post(() -> { copying = false; status.setText(message); });
+        });
+    }
+    private void enterPostcode() {
+        if (!postcodes.installed()) {
+            new AlertDialog.Builder(this).setTitle("Postcode database needed")
+                .setMessage("Import a local CSV or CSV.GZ file with postcode,latitude,longitude columns. Great Britain open data is available from Open Postcode Geo; Northern Ireland requires a separately licensed data source.")
+                .setPositiveButton("Import", (d,w) -> importPostcodes())
+                .setNegativeButton("Cancel", null).show();
+            return;
+        }
+        EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setHint("e.g. B1 1AA");
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS);
+        new AlertDialog.Builder(this).setTitle("Offline postcode destination")
+            .setView(input)
+            .setPositiveButton("Find", (d,w) -> {
+                RouteParser.Point found = postcodes.lookup(input.getText().toString());
+                if (found == null) {
+                    status.setText("Postcode not found in the imported offline database");
+                    return;
+                }
+                setDestination(found);
+                if (mapReady) {
+                    mapView.setCenter(new LatLong(found.lat,found.lon));
+                    mapView.setZoomLevel((byte) 15);
+                }
+                status.setText("Postcode selected • Press START ROUTE");
+            }).setNegativeButton("Cancel", null).show();
+    }
+    private void toggleVoice() {
+        boolean on = voice.toggle();
+        status.setText(on ? voice.status() : "Spoken guidance muted");
+    }
     private void loadMap(File file) {
         try {
             mapFileReader = new MapFile(file);
@@ -217,28 +296,43 @@ public final class MapActivity extends Activity {
     private void selectMapCentre() {
         if (!mapReady) { Toast.makeText(this, "Import a map first", Toast.LENGTH_SHORT).show(); return; }
         LatLong target = mapView.getModel().mapViewPosition.getCenter();
-        destination = new RouteParser.Point(target.latitude, target.longitude);
+        setDestination(new RouteParser.Point(target.latitude, target.longitude));
+        status.setText("Map destination set • Press START ROUTE");
+    }
+    private void setDestination(RouteParser.Point point) {
+        destination = point; stopped = false;
+        navigation = null;
         removeRouteOverlay();
         if (destinationOverlay != null) mapView.getLayerManager().getLayers().remove(destinationOverlay);
-        Paint fill = AndroidGraphicFactory.INSTANCE.createPaint();
-        fill.setColor(DriveUi.TEAL);
-        fill.setStyle(Style.FILL);
-        destinationOverlay = new FixedPixelCircle(target, DriveUi.dp(this, 10), fill, null);
-        mapView.getLayerManager().getLayers().add(destinationOverlay);
-        status.setText(String.format(Locale.UK, "Destination selected (%.4f, %.4f) • Press ROUTE", target.latitude, target.longitude));
+        if (mapReady) {
+            Paint fill = AndroidGraphicFactory.INSTANCE.createPaint();
+            fill.setColor(DriveUi.TEAL); fill.setStyle(Style.FILL);
+            destinationOverlay = new FixedPixelCircle(new LatLong(point.lat,point.lon),
+                DriveUi.dp(this, 10), fill, null);
+            mapView.getLayerManager().getLayers().add(destinationOverlay);
+        }
     }
-    private void calculateRoute() {
+    private void calculateRoute(boolean automatic) {
         if (!mapReady) { Toast.makeText(this, "Import a map first", Toast.LENGTH_LONG).show(); return; }
         if (destination == null) { Toast.makeText(this, "Pan the map to the destination and press SET DEST", Toast.LENGTH_LONG).show(); return; }
-        if (lastFix == null) { Toast.makeText(this, "Waiting for a fresh GPS position", Toast.LENGTH_LONG).show(); return; }
+        if (lastFix == null || !lastFix.hasAccuracy() || lastFix.getAccuracy() > 45f) {
+            status.setText("Waiting for accurate GPS to calculate the route"); return;
+        }
+        if (routeCalculating) return;
+        routeCalculating = true;
+        stopped = false;
+        RouteParser.Point requestedDestination = destination;
         RouteParser.Point start = new RouteParser.Point(lastFix.getLatitude(), lastFix.getLongitude());
-        status.setText("Calculating offline driving route • this can take up to 45 seconds...");
+        status.setText(automatic ? "Off route • recalculating offline..." : "Calculating offline driving route...");
         routing.request(start, destination, (route, error) -> {
+            routeCalculating = false;
+            if (stopped || requestedDestination != destination) return;
             if (error != null) {
                 status.setText("Route unavailable: " + error);
-                new AlertDialog.Builder(this).setTitle("Offline route unavailable")
-                    .setMessage(error + "\n\nBRouter and its local driving (.rd5) segments are required in addition to the map file.")
-                    .setPositiveButton("BRouter setup", (d, w) -> openBRouterSetup())
+                if (navigation != null) navigation.failedReroute();
+                if (!automatic) new AlertDialog.Builder(this).setTitle("Offline route unavailable")
+                    .setMessage(error + "\n\nBRouter and its local driving (.rd5) segments are required.")
+                    .setPositiveButton("BRouter setup", (d,w) -> openBRouterSetup())
                     .setNegativeButton("Close", null).show();
                 return;
             }
@@ -253,7 +347,13 @@ public final class MapActivity extends Activity {
                 points.add(new LatLong(point.lat, point.lon));
             routeOverlay.setPoints(points);
             mapView.getLayerManager().getLayers().add(routeOverlay);
-            status.setText(String.format(Locale.UK, "Route: %.1f miles • Preview only: no spoken instructions or live guidance", route.miles));
+            if (navigation == null) navigation = new NavigationSession(route);
+            else navigation.reset(route);
+            status.setText(String.format(Locale.UK, "Route: %.1f miles • %s • %s",
+                route.miles, navigation.hasTurns() ? "Guidance active" : "No turn data", voice.status()));
+            if (navigation.hasTurns()) voice.say(automatic ? "New route calculated" : "Navigation started");
+            mapView.setCenter(new LatLong(start.lat, start.lon));
+            mapView.setZoomLevel((byte) 16);
         });
     }
     private void openBRouterSetup() {
@@ -274,6 +374,9 @@ public final class MapActivity extends Activity {
         }
     }
     private void clearNavigation() {
+        stopped = true;
+        navigation = null;
+        if (voice != null) voice.say("Navigation stopped");
         destination = null;
         removeRouteOverlay();
         if (destinationOverlay != null) {
@@ -285,6 +388,18 @@ public final class MapActivity extends Activity {
     private void onGps(Integer mph, String state, Location location) {
         speed.setText(mph == null ? "— MPH" : mph + " MPH");
         lastFix = location;
+        if (navigation == null || location == null || stopped || routeCalculating) return;
+        NavigationSession.Update update = navigation.locate(
+            new RouteParser.Point(location.getLatitude(), location.getLongitude()),
+            location.hasAccuracy() ? location.getAccuracy() : 999f,
+            SystemClock.elapsedRealtime());
+        status.setText(update.display);
+        if (update.speak != null) voice.say(update.speak);
+        if (update.reroute) calculateRoute(true);
+        if (update.arrived) {
+            navigation = null;
+            status.setText("Destination reached");
+        }
     }
     @Override protected void onResume() {
         super.onResume();
@@ -304,6 +419,7 @@ public final class MapActivity extends Activity {
     @Override protected void onDestroy() {
         io.shutdown();
         if (routing != null) routing.destroy();
+        if (voice != null) voice.shutdown();
         if (mapView != null) mapView.destroyAll();
         if (mapFileReader != null) try { mapFileReader.close(); } catch (Exception ignored) { }
         AndroidGraphicFactory.clearResourceMemoryCache();
