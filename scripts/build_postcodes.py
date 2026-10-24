@@ -36,6 +36,7 @@ def build(outdir: Path):
     with tempfile.TemporaryDirectory(prefix="eaton-postcode-") as temp:
         archive = Path(temp) / "source.zip"
         download(SOURCE, archive)
+        print("SOURCE_DOWNLOAD_CHECK", archive.stat().st_size, repr(archive.open("rb").read(300)), flush=True)
         if archive.stat().st_size < 100_000 or archive.stat().st_size > 300_000_000:
             raise RuntimeError("Postcode archive had an unexpected size")
         with zipfile.ZipFile(archive) as container:
