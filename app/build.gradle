@@ -1,0 +1,22 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'uk.co.eaton.drive'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'uk.co.eaton.drive'
+        minSdk 23
+        targetSdk 32
+        versionCode 1
+        versionName '0.1.0'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+dependencies {
+    implementation 'org.mapsforge:mapsforge-map-android:0.25.0'
+    implementation 'org.mapsforge:mapsforge-map-reader:0.25.0'
+    testImplementation 'junit:junit:4.13.2'
+}
