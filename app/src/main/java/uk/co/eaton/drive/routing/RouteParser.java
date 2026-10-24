@@ -122,7 +122,7 @@ public final class RouteParser {
         if (code == null || code.isEmpty()) return null;
         String[] detail = code.toUpperCase(java.util.Locale.UK).split("-",2);
         String direction = detail[0];
-        if (direction.startsWith("RND")) {
+        if (direction.startsWith("RND") || direction.startsWith("RNL")) {
             if (detail.length == 2 && detail[1].matches("[0-9]{1,2}"))
                 return "At the roundabout take exit " + Integer.parseInt(detail[1]);
             return "At the roundabout follow the signs";
