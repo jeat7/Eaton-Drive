@@ -10,4 +10,14 @@ Maps and routing files can be much larger than the APK; do not commit them to Gi
 
 The postcode source is based on the **August 2023** ONS release, so some modern postcodes will be missing. It excludes Northern Ireland. A postcode centre is an approximate destination, not necessarily a drivable entrance. Data from GetTheData (https://www.getthedata.com/open-postcode-geo), ONS and Ordnance Survey; Crown copyright and database right; Open Government Licence v3.0 and OS OpenData terms. © OpenStreetMap contributors for maps/routing.
 
-For repeatable downloading on a computer, see `scripts/fetch_offline_maps.py` and the **Prepare Eaton Drive UK map/routing packs** workflow. The stock v0.3 app can display just one .map at once; combined GB maps require the planned multi-map update.
+For repeatable downloading on a computer, see `scripts/fetch_offline_maps.py` and the **Prepare Eaton Drive UK map/routing packs** workflow. The v0.4+ supports England, Scotland and Wales at the same time. Import each .map individually in NAVIGATION, once per region.
+
+
+## UK packages built with GitHub Actions
+
+- Postcode data (16.1MB, September 2026, GB): https://github.com/jeat7/Eaton-Drive/actions/runs/40099254057
+- BRouter RD5 routing (295.4 MB, GB): https://github.com/jeat7/Eaton-Drive/actions/runs/40099368053
+- England/Scotland/Wales maps: https://github.com/jeat7/Eaton-Drive/actions/workflows/offline-map-files.yml
+- BRouter APK (publisher/F-Droid signed): https://f-droid.org/packages/btools.routingapp/
+
+Download Actions artifacts onto a computer and EXTRACT the artifacts (outer ZIP). Keep the .CSV.GZ compressed; its content is imported via IMPORT PCs. Copy the .map files to USB and IMPORT MAP separately for each region. For RD5 tiles, use BRouter's Download Manager if possible; direct file copies belong in BRouter's brouter/segments4 directory after first launching it. Select an offline UK English text-to-speech voice in Android settings. Once installed, disconnect from Wi-Fi and test only while parked. Artifacts can expire after 7 or 14 days; workflows let you regenerate them.

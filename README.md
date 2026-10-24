@@ -1,11 +1,11 @@
-# Eaton Drive v0.3 — offline navigation prototype
+# Eaton Drive v0.4 — offline navigation prototype and Great Britain multi-map support
 
 Native Android 11-compatible landscape launcher for the Rimoodly 9-inch 1024×600 Suzuki Celerio head unit (advertised 1GB RAM, 16GB flash).
 
 ## Implemented
 - Eaton navy/teal launcher; improved nav-pin road/arrow scalable launcher icon.
 - GPS MPH speedometer on Home and Maps even without data connection; lost fix displays an em dash.
-- Offline Mapsforge .map renderer with local import.
+- Offline Mapsforge .map renderer with multiple maps loaded together. Import England, Scotland and Wales separately; they remain installed together.
 - BRouter offline motorcar route calculation: requires separately-installed BRouter, car profile and appropriate offline .rd5 files.
 - **Postcode search**: on-device SQLite database; CSV/CSV.GZ **with postcode,latitude,longitude columns** imported once. No internet queries. Recommended public source: Open Postcode Geo (GB; NI not included). Lookup accepts spaces/case variations.
 - **Spoken turn guidance** from BRouter OsmAnd-format GPX turn tags (when present), using an installed OFFLINE English Android voice; reports missing voices or missing turn data, never fabricates turns.
@@ -40,3 +40,15 @@ Test as a normal app; do not set as default launcher until radio, Bluetooth, rev
 
 ## Technical constraints
 Android 11 advertised, 1GB RAM, 16GB storage, CPU and MCU unknown. Import database is disk-backed rather than loaded into memory. Avoid importing huge datasets if storage is low. Navigation response parser limits GPX size to 12MB/75,000 points. Routing and TTS remain experimental until real-device testing.
+
+
+## Prepared offline data packages (October 2026)
+
+- [Great Britain postcodes](https://github.com/jeat7/Eaton-Drive/actions/runs/40099254057): 1,764,718 GB records based on September 2026 release; 16.1 MB CSV.GZ. Northern Ireland excluded.
+- [Great Britain BRouter data](https://github.com/jeat7/Eaton-Drive/actions/runs/40099368053): 9 RD5 files, ~295 MB.
+- [England, Scotland and Wales Mapsforge packs](https://github.com/jeat7/Eaton-Drive/actions/workflows/offline-map-files.yml): separate downloadable map artifacts.
+- [BRouter signed APK](https://f-droid.org/packages/btools.routingapp/): install official application separately; configure motorcar_fast.
+
+Copy files onto USB; in navigation choose IMPORT MAP for each .map and IMPORT PCs for the postcode CSV.GZ (keep compressed). BRouter RD5 tiles must be installed in BRouter's own configured segment directory. An offline English TTS voice must also be installed through Android speech settings. See OFFLINE-DATA.md.
+
+WARNING: v0.4 is an untested driving-navigation prototype. Test while parked before setting as HOME or relying on directions.
