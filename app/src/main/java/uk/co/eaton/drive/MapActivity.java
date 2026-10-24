@@ -17,6 +17,14 @@ import android.os.Handler;
 import android.os.Looper;
 
 import org.mapsforge.core.model.LatLong;
+import org.mapsforge.core.graphics.Paint;
+import org.mapsforge.core.graphics.Style;
+import org.mapsforge.map.layer.overlay.Polyline;
+import org.mapsforge.map.layer.overlay.FixedPixelCircle;
+import uk.co.eaton.drive.routing.BRouterClient;
+import uk.co.eaton.drive.routing.RouteParser;
+import java.util.ArrayList;
+import java.util.Locale;
 import org.mapsforge.map.android.graphics.AndroidGraphicFactory;
 import org.mapsforge.map.android.util.AndroidUtil;
 import org.mapsforge.map.android.view.MapView;
@@ -47,6 +55,10 @@ public final class MapActivity extends Activity {
     private Location lastFix;
     private MapFile mapFileReader;
     private volatile boolean copying;
+    private BRouterClient routing;
+    private RouteParser.Point destination;
+    private Polyline routeOverlay;
+    private FixedPixelCircle destinationOverlay;
     private boolean mapReady;
 
     @Override protected void onCreate(Bundle state) {
@@ -55,6 +67,7 @@ public final class MapActivity extends Activity {
         AndroidGraphicFactory.createInstance(getApplication());
         buildScreen();
         gps = new GpsTracker(this, this::onGps);
+        routing = new BRouterClient(this);
         File file = destinationFile();
         if (file.isFile() && file.length() > 0) loadMap(file);
         else setMessage("Import an offline Mapsforge .map file to begin.");
@@ -81,11 +94,14 @@ public final class MapActivity extends Activity {
         toolbar.setBackgroundColor(DriveUi.BG);
         DriveUi.pad(this, toolbar, 12, 5);
         addButton(toolbar, "‹  BACK", this::finish);
-        TextView title = DriveUi.text(this, "EATON  /  OFFLINE MAP", 17, DriveUi.TEXT, true);
+        TextView title = DriveUi.text(this, "EATON  /  NAVIGATION", 17, DriveUi.TEXT, true);
         title.setGravity(Gravity.CENTER);
         toolbar.addView(title, DriveUi.weighted(0, -1, 1f));
-        addButton(toolbar, "⌖  GPS", this::centreOnGps);
-        addButton(toolbar, "＋  IMPORT MAP", this::importMap);
+        addButton(toolbar, "⌖ GPS", this::centreOnGps);
+        addButton(toolbar, "SET DEST", this::selectMapCentre);
+        addButton(toolbar, "ROUTE", this::calculateRoute);
+        addButton(toolbar, "CLEAR", this::clearNavigation);
+        addButton(toolbar, "MAP FILE", this::importMap);
         outer.addView(toolbar, new FrameLayout.LayoutParams(-1, DriveUi.dp(this, 61), Gravity.TOP));
 
         LinearLayout footer = DriveUi.row(this);
@@ -186,7 +202,7 @@ public final class MapActivity extends Activity {
             mapView.setCenter(mapFileReader.startPosition());
             mapView.setZoomLevel(mapFileReader.startZoomLevel());
             mapReady = true;
-            setMessage("Offline map ready • Routing not built yet • © OpenStreetMap contributors");
+            setMessage("Map ready • Select a destination using SET DEST • © OpenStreetMap contributors");
         } catch (Exception ex) {
             mapReady = false;
             setMessage("Could not load map: " + ex.getMessage());
@@ -197,6 +213,74 @@ public final class MapActivity extends Activity {
         if (lastFix == null) { Toast.makeText(this, "Waiting for GPS", Toast.LENGTH_SHORT).show(); return; }
         mapView.setCenter(new LatLong(lastFix.getLatitude(), lastFix.getLongitude()));
         mapView.setZoomLevel((byte) 16);
+    }
+    private void selectMapCentre() {
+        if (!mapReady) { Toast.makeText(this, "Import a map first", Toast.LENGTH_SHORT).show(); return; }
+        LatLong target = mapView.getModel().mapViewPosition.getCenter();
+        destination = new RouteParser.Point(target.latitude, target.longitude);
+        removeRouteOverlay();
+        if (destinationOverlay != null) mapView.getLayerManager().getLayers().remove(destinationOverlay);
+        Paint fill = AndroidGraphicFactory.INSTANCE.createPaint();
+        fill.setColor(AndroidGraphicFactory.INSTANCE.createColor(DriveUi.TEAL));
+        fill.setStyle(Style.FILL);
+        destinationOverlay = new FixedPixelCircle(target, DriveUi.dp(this, 10), fill, null);
+        mapView.getLayerManager().getLayers().add(destinationOverlay);
+        status.setText(String.format(Locale.UK, "Destination selected (%.4f, %.4f) • Press ROUTE", target.latitude, target.longitude));
+    }
+    private void calculateRoute() {
+        if (!mapReady) { Toast.makeText(this, "Import a map first", Toast.LENGTH_LONG).show(); return; }
+        if (destination == null) { Toast.makeText(this, "Pan the map to the destination and press SET DEST", Toast.LENGTH_LONG).show(); return; }
+        if (lastFix == null) { Toast.makeText(this, "Waiting for a fresh GPS position", Toast.LENGTH_LONG).show(); return; }
+        RouteParser.Point start = new RouteParser.Point(lastFix.getLatitude(), lastFix.getLongitude());
+        status.setText("Calculating offline driving route • this can take up to 45 seconds...");
+        routing.request(start, destination, (route, error) -> {
+            if (error != null) {
+                status.setText("Route unavailable: " + error);
+                new AlertDialog.Builder(this).setTitle("Offline route unavailable")
+                    .setMessage(error + "\n\nBRouter and its local driving (.rd5) segments are required in addition to the map file.")
+                    .setPositiveButton("BRouter setup", (d, w) -> openBRouterSetup())
+                    .setNegativeButton("Close", null).show();
+                return;
+            }
+            removeRouteOverlay();
+            Paint stroke = AndroidGraphicFactory.INSTANCE.createPaint();
+            stroke.setColor(AndroidGraphicFactory.INSTANCE.createColor(DriveUi.TEAL));
+            stroke.setStyle(Style.STROKE);
+            stroke.setStrokeWidth(DriveUi.dp(this, 6));
+            routeOverlay = new Polyline(stroke, AndroidGraphicFactory.INSTANCE);
+            ArrayList<LatLong> points = new ArrayList<>(route.points.size());
+            for (RouteParser.Point point : route.points)
+                points.add(new LatLong(point.lat, point.lon));
+            routeOverlay.setPoints(points);
+            mapView.getLayerManager().getLayers().add(routeOverlay);
+            status.setText(String.format(Locale.UK, "Route: %.1f miles • Preview only: no spoken instructions or live guidance", route.miles));
+        });
+    }
+    private void openBRouterSetup() {
+        try {
+            Intent setup = new Intent();
+            setup.setClassName("btools.routingapp", "btools.routingapp.BRouterActivity");
+            startActivity(setup);
+        } catch (Exception ex) {
+            new AlertDialog.Builder(this).setTitle("BRouter not installed")
+                .setMessage("Install the BRouter Android app from a trusted source, open it, choose motorcar routing and download local routing segments covering your region. Then come back to Eaton Drive.")
+                .setPositiveButton("OK", null).show();
+        }
+    }
+    private void removeRouteOverlay() {
+        if (routeOverlay != null) {
+            mapView.getLayerManager().getLayers().remove(routeOverlay);
+            routeOverlay = null;
+        }
+    }
+    private void clearNavigation() {
+        destination = null;
+        removeRouteOverlay();
+        if (destinationOverlay != null) {
+            mapView.getLayerManager().getLayers().remove(destinationOverlay);
+            destinationOverlay = null;
+        }
+        status.setText(mapReady ? "Route cleared • Select destination using SET DEST" : "Import a map first");
     }
     private void onGps(Integer mph, String state, Location location) {
         speed.setText(mph == null ? "— MPH" : mph + " MPH");
@@ -219,6 +303,7 @@ public final class MapActivity extends Activity {
     }
     @Override protected void onDestroy() {
         io.shutdown();
+        if (routing != null) routing.destroy();
         if (mapView != null) mapView.destroyAll();
         if (mapFileReader != null) try { mapFileReader.close(); } catch (Exception ignored) { }
         AndroidGraphicFactory.clearResourceMemoryCache();
