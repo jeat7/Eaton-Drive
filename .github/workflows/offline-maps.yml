@@ -1,0 +1,54 @@
+name: Prepare Eaton Drive UK map and routing files
+
+on:
+  workflow_dispatch:
+    inputs:
+      region:
+        description: 'Area to download'
+        type: choice
+        required: true
+        options:
+          - england
+          - wales
+          - scotland
+          - great-britain
+        default: great-britain
+      mode:
+        description: 'Select routing tiles, map files or both'
+        type: choice
+        required: true
+        options:
+          - routing
+          - maps
+          - both
+        default: routing
+  push:
+    paths:
+      - 'scripts/fetch_offline_maps.py'
+      - '.github/workflows/offline-maps.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      REGION: ${{ github.event.inputs.region || 'great-britain' }}
+      MODE: ${{ github.event.inputs.mode || 'routing' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Download and hash official offline data
+        run: python scripts/fetch_offline_maps.py --region "$REGION" --mode "$MODE" out/maps
+      - name: Upload files for USB preparation
+        uses: actions/upload-artifact@v4
+        with:
+          name: Eaton-Drive-UK-${{ env.REGION }}-${{ env.MODE }}
+          path: out/maps/
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 7
