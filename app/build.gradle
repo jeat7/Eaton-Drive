@@ -29,6 +29,12 @@ android {
             }
         }
     }
+    lint {
+        // This is a private, sideloaded prototype for an Android 11 head unit.
+        // A targetSdk migration needs permissions/foreground-service testing.
+        // Suppress only the Google Play publication policy check, not other lint errors.
+        disable 'ExpiredTargetSdkVersion'
+    }
     buildTypes {
         release {
             if (permanentKeystore && permanentKeystorePassword)
