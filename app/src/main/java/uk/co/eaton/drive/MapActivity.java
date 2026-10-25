@@ -2,6 +2,11 @@ package uk.co.eaton.drive;
 
 import android.Manifest;
 import android.os.SystemClock;
+import android.content.ComponentName;
+import android.content.Context;
+import android.content.ServiceConnection;
+import android.os.IBinder;
+import android.os.Build;
 import android.net.Uri;
 import android.database.Cursor;
 import android.provider.OpenableColumns;
@@ -36,6 +41,10 @@ import uk.co.eaton.drive.routing.OfflineRoadImporter;
 import java.util.List;
 import uk.co.eaton.drive.routing.RouteParser;
 import uk.co.eaton.drive.routing.NavigationSession;
+import uk.co.eaton.drive.routing.NavigationService;
+import uk.co.eaton.drive.routing.RouteStorage;
+import uk.co.eaton.drive.routing.TurnDisplay;
+import uk.co.eaton.drive.postcode.PostcodeCsv;
 import uk.co.eaton.drive.routing.VoiceGuide;
 import uk.co.eaton.drive.postcode.PostcodeStore;
 import uk.co.eaton.drive.address.AddressStore;
@@ -71,7 +80,7 @@ public final class MapActivity extends Activity {
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
     private MapView mapView;
-    private TextView status, placeholder, speed, routeInfo, pinButton;
+    private TextView status, placeholder, speed, routeInfo, pinButton, nextTurn, destinationSearch;
     private CarMarkerView carMarker;
     private DestinationPinView centrePin;
     private GpsTracker gps;
@@ -81,7 +90,19 @@ public final class MapActivity extends Activity {
     private EmbeddedRouter routing;
     private PostcodeStore postcodes;
     private AddressStore addressStore;
-    private VoiceGuide voice;
+    private NavigationService navigationService;
+    private boolean navBound, navigationActive, screenVisible;
+    private final NavigationService.Observer serviceObserver = this::onNavigationState;
+    private final ServiceConnection navConnection = new ServiceConnection() {
+        @Override public void onServiceConnected(ComponentName name, IBinder binder) {
+            navigationService=((NavigationService.LocalBinder)binder).instance();
+            navigationService.observe(serviceObserver);
+        }
+        @Override public void onServiceDisconnected(ComponentName name) {
+            navigationService=null;
+            navigationActive=false;
+        }
+    };
     private NavigationSession navigation;
     private RouteParser.Route plannedRoute, primaryRoute, alternativeRoute;
     private boolean selectedAlternative;
@@ -107,7 +128,6 @@ public final class MapActivity extends Activity {
         routing = new EmbeddedRouter(this);
         postcodes = new PostcodeStore(this);
         addressStore = new AddressStore(this);
-        voice = new VoiceGuide(this);
         loadInstalledMaps();
         prepareBuiltInPostcodes();
     }
@@ -144,15 +164,21 @@ public final class MapActivity extends Activity {
         title.setGravity(Gravity.CENTER);
         row1.addView(title, DriveUi.weighted(0, -1, 1f));
         addButton(row1, "GPS", this::centreOnGps);
-        addButton(row1, "VOICE", this::toggleVoice);
+        addButton(row1, "MUTE / VOICE", this::toggleVoice);
+        addButton(row1, "OPTIONS", this::showRouteOptions);
         addButton(row1, "SETUP", this::openSetup);
-        addButton(row2, "POSTCODE", this::enterPostcode);
-        addButton(row2, "ADDRESS", this::searchAddress);
+        destinationSearch = DriveUi.text(this, "⌕  WHERE TO?  •  POSTCODE, STREET OR ADDRESS", 17, DriveUi.TEXT, true);
+        destinationSearch.setGravity(Gravity.CENTER_VERTICAL);
+        destinationSearch.setBackground(DriveUi.bg(this,DriveUi.PANEL2,12,true));
+        destinationSearch.setPadding(DriveUi.dp(this,15),0,DriveUi.dp(this,10),0);
+        LinearLayout.LayoutParams searchLp=new LinearLayout.LayoutParams(0,-1,1f);
+        searchLp.setMargins(DriveUi.dp(this,4),DriveUi.dp(this,3),DriveUi.dp(this,4),DriveUi.dp(this,3));
+        row2.addView(destinationSearch,searchLp);
+        destinationSearch.setOnClickListener(v->openDestinationSearch());
         pinButton = addButton(row2, "PIN", this::selectMapCentre);
         addButton(row2, "PLAN", () -> calculateRoute(false));
-        addButton(row2, "OTHER ROUTE", this::chooseAlternative);
+        addButton(row2, "ROUTES", this::chooseAlternative);
         addButton(row2, "GO", this::startGuidance);
-        addButton(row2, "OPTIONS", this::showRouteOptions);
         addButton(row2, "STOP", this::clearNavigation);
         outer.addView(toolbar, new FrameLayout.LayoutParams(-1, DriveUi.dp(this, 90), Gravity.TOP));
         // The pin's tip is exactly at the map centre. Only shown while selecting manually.
@@ -172,6 +198,18 @@ public final class MapActivity extends Activity {
         infoParams.rightMargin = DriveUi.dp(this,13);
         outer.addView(routeInfo,infoParams);
         routeInfo.setVisibility(View.GONE);
+        nextTurn = DriveUi.text(this, "Continue along route", 23, DriveUi.TEXT, true);
+        nextTurn.setGravity(Gravity.CENTER_VERTICAL);
+        nextTurn.setBackground(DriveUi.bg(this,DriveUi.PANEL,12,true));
+        DriveUi.pad(this,nextTurn,14,10);
+        int bannerWidth=Math.min(DriveUi.dp(this,550),
+            (int)(getResources().getDisplayMetrics().widthPixels*0.52f));
+        FrameLayout.LayoutParams turnParams=new FrameLayout.LayoutParams(
+            bannerWidth,DriveUi.dp(this,78),Gravity.TOP|Gravity.LEFT);
+        turnParams.topMargin=DriveUi.dp(this,94);
+        turnParams.leftMargin=DriveUi.dp(this,12);
+        outer.addView(nextTurn,turnParams);
+        nextTurn.setVisibility(View.GONE);
         carMarker = new CarMarkerView(this);
         FrameLayout.LayoutParams carParams = new FrameLayout.LayoutParams(
             DriveUi.dp(this,carSizeDp),DriveUi.dp(this,carSizeDp),Gravity.CENTER);
@@ -380,6 +418,9 @@ public final class MapActivity extends Activity {
             prefs.getBoolean("avoid_tolls",false),alternate);
     }
     private void showRouteOptions() {
+        if(navigationActive){
+            status.setText("Stop guidance before changing route options");return;
+        }
         android.content.SharedPreferences prefs = getPreferences(0);
         final boolean[] toggles = {prefs.getBoolean("avoid_motorways",false),
             prefs.getBoolean("avoid_tolls",false)};
@@ -505,6 +546,78 @@ public final class MapActivity extends Activity {
                 });
             }).setNegativeButton("Cancel",null).show();
     }
+    /** Single large offline search action: exact GB postcodes or regional OSM addresses. */
+    private void openDestinationSearch() {
+        if(navigationActive){
+            status.setText("Stop current guidance before choosing another destination");
+            return;
+        }
+        EditText entry=new EditText(this);
+        entry.setHint("Postcode, road, town or house number");
+        entry.setSingleLine(true);
+        entry.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_CAP_WORDS);
+        new AlertDialog.Builder(this).setTitle("Where to?")
+            .setView(entry)
+            .setPositiveButton("FIND",(dialog,which)->findDestination(entry.getText().toString().trim()))
+            .setNeutralButton("MAP PIN",(dialog,which)->selectMapCentre())
+            .setNegativeButton("Cancel",null).show();
+    }
+    private void findDestination(String query){
+        if(query.isEmpty()){status.setText("Enter a destination");return;}
+        if(PostcodeCsv.plausible(PostcodeCsv.normalise(query))){
+            if(!postcodes.installed()){
+                status.setText("Built-in postcode search is not ready yet");return;
+            }
+            io.execute(()->{
+                RouteParser.Point found=postcodes.lookup(query);
+                main.post(()->{
+                    if(isFinishing()||isDestroyed())return;
+                    if(found==null){status.setText("Postcode not found in offline GB database");return;}
+                    setDestination(found);
+                    if(mapReady){
+                        mapView.setCenter(new LatLong(found.lat,found.lon));
+                        mapView.setZoomLevel((byte)15);
+                    }
+                    destinationSearch.setText("⌕  "+query.toUpperCase(Locale.UK));
+                    status.setText("Postcode selected — tap PLAN");
+                });
+            });
+            return;
+        }
+        if(!addressStore.installed()){
+            new AlertDialog.Builder(this).setTitle("Street search needs offline data")
+                .setMessage("Install a regional address index once via SETUP. Postcode search is already built in.")
+                .setPositiveButton("SETUP",(d,w)->openSetup())
+                .setNegativeButton("Close",null).show();
+            return;
+        }
+        status.setText("Searching local streets and addresses...");
+        RouteParser.Point near=lastFix==null?null:
+            new RouteParser.Point(lastFix.getLatitude(),lastFix.getLongitude());
+        io.execute(()->{
+            List<AddressStore.Result> results=addressStore.search(query,near);
+            main.post(()->{
+                if(isFinishing()||isDestroyed())return;
+                if(results.isEmpty()){
+                    status.setText("No local street/address matches. Try a postcode or another search");
+                    return;
+                }
+                String[] labels=new String[results.size()];
+                for(int i=0;i<labels.length;i++)labels[i]=results.get(i).label;
+                new AlertDialog.Builder(this).setTitle("Choose destination")
+                    .setItems(labels,(dialog,index)->{
+                        AddressStore.Result result=results.get(index);
+                        setDestination(result.point);
+                        if(mapReady){
+                            mapView.setCenter(new LatLong(result.point.lat,result.point.lon));
+                            mapView.setZoomLevel((byte)16);
+                        }
+                        destinationSearch.setText("⌕  "+result.label);
+                        status.setText("Destination selected — tap PLAN");
+                    }).setNegativeButton("Cancel",null).show();
+            });
+        });
+    }
     private void enterPostcode() {
         if (!postcodes.installed()) {
             new AlertDialog.Builder(this).setTitle("Offline postcodes")
@@ -535,8 +648,11 @@ public final class MapActivity extends Activity {
             }).setNegativeButton("Cancel", null).show();
     }
     private void toggleVoice() {
-        boolean on = voice.toggle();
-        status.setText(on ? voice.status() : "Spoken guidance muted");
+        android.content.SharedPreferences preferences=getSharedPreferences("navigation",MODE_PRIVATE);
+        boolean enabled=!preferences.getBoolean("voice_enabled",true);
+        preferences.edit().putBoolean("voice_enabled",enabled).apply();
+        if(navigationService!=null)navigationService.setSpeechEnabled(enabled);
+        status.setText(enabled?"Voice enabled (offline speech voice required)":"Spoken guidance muted");
     }
     private String selectedMapFilename(Uri selected) {
         String supplied = null;
@@ -646,6 +762,10 @@ public final class MapActivity extends Activity {
         status.setText("Destination selected • Tap PLAN");
     }
     private void setDestination(RouteParser.Point point) {
+        if(navigationActive){
+            status.setText("Stop navigation before selecting a new destination");
+            return;
+        }
         destination = point;
         stopped = false;
         plannedRoute = null; primaryRoute = null; alternativeRoute = null;
@@ -697,8 +817,7 @@ public final class MapActivity extends Activity {
             }
             plannedRoute = route;
             displayRoute(route);
-            if (automatic) voice.say("Route recalculated");
-            else status.setText("Route ready • Tap GO to begin, or OTHER ROUTE to compare");
+            if (!automatic) status.setText("Route ready • Tap GO to begin, or ROUTES to compare");
         });
     }
     private void displayRoute(RouteParser.Route route) {
@@ -712,7 +831,7 @@ public final class MapActivity extends Activity {
             coordinates.add(new LatLong(point.lat,point.lon));
         routeOverlay.setPoints(coordinates);
         mapView.getLayerManager().getLayers().add(routeOverlay);
-        routeInfo.setText(routeSummary(route) + (navigation == null ? " • PREVIEW" : " • LIVE"));
+        routeInfo.setText(routeSummary(route) + (navigationActive ? " • LIVE" : " • PREVIEW"));
         routeInfo.setVisibility(View.VISIBLE);
     }
     private String routeSummary(RouteParser.Route route) {
@@ -726,7 +845,7 @@ public final class MapActivity extends Activity {
         if (primaryRoute == null || destination == null) {
             status.setText("Calculate your main route first using PLAN"); return;
         }
-        if (navigation != null) {
+        if (navigationActive) {
             status.setText("Stop active guidance before selecting another route"); return;
         }
         if (alternativeRoute != null) { showRouteComparison(); return; }
@@ -772,22 +891,70 @@ public final class MapActivity extends Activity {
             }).setNegativeButton("Cancel",null).show();
     }
     private void startGuidance() {
-        if (plannedRoute == null) {
-            status.setText("Calculate a route using PLAN first"); return;
+        if(plannedRoute==null){status.setText("Tap PLAN to calculate a route first");return;}
+        if(navigationActive){status.setText("Navigation is already active");return;}
+        if(!gps.hasPermission()){
+            status.setText("Precise location permission required to start guidance");return;
         }
-        if (lastFix == null || !lastFix.hasAccuracy() || lastFix.getAccuracy() > 45f) {
-            status.setText("Need an accurate GPS fix before guidance can begin"); return;
+        if(lastFix==null||!lastFix.hasAccuracy()||lastFix.getAccuracy()>45f){
+            status.setText("Wait for an accurate GPS position before starting");return;
         }
-        navigation = new NavigationSession(plannedRoute);
-        userMovedMap = false;
-        centrePin.setVisibility(View.GONE);
-        choosingPin = false;
-        pinButton.setText("PIN");
-        status.setText(navigation.hasTurns() ? "Guidance started • following GPS"
-            : "Following GPS • route has no spoken-turn instructions");
-        displayRoute(plannedRoute);
-        voice.say("Navigation started");
-        followGps(lastFix);
+        try {
+            RouteStorage.save(this,plannedRoute,
+                preferredOptions(selectedAlternative?1:0));
+            // Android requires a user-visible launch for location FGS.
+            Intent go=NavigationService.startIntent(this);
+            if(Build.VERSION.SDK_INT>=26)startForegroundService(go);
+            else startService(go);
+            if(!navBound)connectNavigationService();
+            userMovedMap=false;
+            choosingPin=false;
+            centrePin.setVisibility(View.GONE);
+            pinButton.setText("PIN");
+            status.setText("Starting offline guidance • notification offers STOP");
+        }catch(Exception problem){
+            status.setText("Could not start navigation: "+problem.getMessage());
+        }
+    }
+    private void connectNavigationService(){
+        if(navBound)return;
+        navBound=bindService(new Intent(this,NavigationService.class),navConnection,Context.BIND_AUTO_CREATE);
+    }
+    private void onNavigationState(NavigationService.Snapshot state){
+        boolean wasActive=navigationActive;
+        navigationActive=state.active;
+        if(state.active){
+            if(state.route!=null&&state.route!=plannedRoute){
+                plannedRoute=state.route;
+                displayRoute(state.route);
+            }
+            nextTurn.setVisibility(View.VISIBLE);
+            nextTurn.setText(state.lostGps?"GPS SIGNAL LOST — instructions paused":state.instruction);
+            status.setText(state.message);
+            if(state.route!=null)
+                routeInfo.setText(String.format(Locale.UK,"%.1f mi left • ~%d min • LIVE",
+                    state.remainingMiles,state.remainingMinutes));
+            routeInfo.setVisibility(View.VISIBLE);
+            if(state.location!=null){
+                lastFix=state.location;
+                int mph=state.location.hasSpeed()?
+                    uk.co.eaton.drive.util.SpeedMath.toMph(state.location.getSpeed()):-1;
+                speed.setText(mph>=0?mph+" MPH":"— MPH");
+                followGps(state.location);
+            }else{
+                carMarker.update(0,false);
+                speed.setText("— MPH");
+            }
+        }else if(wasActive){
+            nextTurn.setVisibility(View.GONE);
+            carMarker.update(0,false);
+            routeInfo.setVisibility(View.GONE);
+            plannedRoute=null;primaryRoute=null;alternativeRoute=null;
+            removeRouteOverlay();
+            status.setText(state.message);
+            navigation=null;
+            if(screenVisible&&gps!=null)gps.start();
+        }
     }
     private void followGps(Location location) {
         if (location == null || !mapReady || !location.hasAccuracy()
@@ -811,63 +978,46 @@ public final class MapActivity extends Activity {
         }
     }
     private void clearNavigation() {
-        stopped = true;
-        navigation = null;
-        plannedRoute = null; primaryRoute = null; alternativeRoute = null;
+        if(navigationActive||navigationService!=null&&navigationService.isActive()){
+            NavigationService.stop(this);
+        }
+        navigationActive=false;
+        stopped=true;
+        navigation=null;
+        plannedRoute=null;primaryRoute=null;alternativeRoute=null;
         routeInfo.setVisibility(View.GONE);
+        nextTurn.setVisibility(View.GONE);
         carMarker.update(0,false);
-        choosingPin = false;
+        choosingPin=false;
         centrePin.setVisibility(View.GONE);
         pinButton.setText("PIN");
-        if (voice != null) voice.say("Navigation stopped");
-        destination = null;
+        destination=null;
+        destinationSearch.setText("⌕  WHERE TO?  •  POSTCODE, STREET OR ADDRESS");
         removeRouteOverlay();
-        if (destinationOverlay != null) {
+        if(destinationOverlay!=null){
             mapView.getLayerManager().getLayers().remove(destinationOverlay);
-            destinationOverlay = null;
+            destinationOverlay=null;
         }
-        status.setText(mapReady ? "Route cleared • Select destination using SET DEST" : "Import a map first");
+        status.setText("Route cleared • choose your next destination");
     }
     private void onGps(Integer mph, String state, Location location) {
-        speed.setText(mph == null ? "— MPH" : mph + " MPH");
-        lastFix = location;
-        if (location != null && mapReady && !autoCentredOnGps && !userMovedMap
-            && location.hasAccuracy() && location.getAccuracy() <= 60f
-            && navigation == null && destination == null) {
-            mapView.setCenter(new LatLong(location.getLatitude(), location.getLongitude()));
+        if(navigationActive)return; // Service owns the GPS fix and guidance while GO is active.
+        speed.setText(mph==null?"— MPH":mph+" MPH");
+        lastFix=location;
+        if(location!=null&&mapReady&&!autoCentredOnGps&&!userMovedMap
+            &&location.hasAccuracy()&&location.getAccuracy()<=60f
+            &&destination==null){
+            mapView.setCenter(new LatLong(location.getLatitude(),location.getLongitude()));
             mapView.setZoomLevel((byte)15);
-            autoCentredOnGps = true;
-        }
-        if (navigation == null || location == null || stopped || routeCalculating) {
-            if (navigation == null || location == null) carMarker.update(0,false);
-            return;
-        }
-        followGps(location);
-        NavigationSession.Update update = navigation.locate(
-            new RouteParser.Point(location.getLatitude(), location.getLongitude()),
-            location.hasAccuracy() ? location.getAccuracy() : 999f,
-            SystemClock.elapsedRealtime());
-        status.setText(update.display);
-        if (plannedRoute != null && plannedRoute.miles > 0) {
-            double remaining = navigation.remainingMiles();
-            int totalSeconds = plannedRoute.estimatedSeconds > 0 ? plannedRoute.estimatedSeconds
-                : (int)Math.ceil(plannedRoute.miles/35.0*3600);
-            int minutes = Math.max(0,(int)Math.ceil(totalSeconds*remaining/plannedRoute.miles/60.0));
-            routeInfo.setText(String.format(Locale.UK,"%.1f mi left • ~%d min • LIVE",remaining,minutes));
-        }
-        if (update.speak != null) voice.say(update.speak);
-        if (update.reroute) calculateRoute(true);
-        if (update.arrived) {
-            navigation = null;
-            routeInfo.setText("Destination reached");
-            carMarker.update(0,false);
-            status.setText("Destination reached");
+            autoCentredOnGps=true;
         }
     }
     @Override protected void onResume() {
         super.onResume();
-        if (gps != null) {
-            if (!gps.hasPermission()) requestPermissions(new String[] { Manifest.permission.ACCESS_FINE_LOCATION }, LOCATION_REQUEST);
+        screenVisible=true;
+        connectNavigationService();
+        if(gps!=null&&!navigationActive){
+            if(!gps.hasPermission())requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION},LOCATION_REQUEST);
             else gps.start();
         }
     }
@@ -876,14 +1026,23 @@ public final class MapActivity extends Activity {
         if (code == LOCATION_REQUEST && gps != null) gps.start();
     }
     @Override protected void onPause() {
+        screenVisible=false;
         saveLastMapPosition();
-        if (gps != null) gps.stop();
+        if(gps!=null)gps.stop();
         super.onPause();
+    }
+    @Override protected void onStop(){
+        if(navBound){
+            if(navigationService!=null)navigationService.removeObserver(serviceObserver);
+            unbindService(navConnection);
+            navBound=false;
+            navigationService=null;
+        }
+        super.onStop();
     }
     @Override protected void onDestroy() {
         io.shutdown();
         if (routing != null) routing.destroy();
-        if (voice != null) voice.shutdown();
         if (mapView != null) mapView.destroyAll();
         if (mapFileReader != null) try { mapFileReader.close(); } catch (Exception ignored) { }
         AndroidGraphicFactory.clearResourceMemoryCache();
