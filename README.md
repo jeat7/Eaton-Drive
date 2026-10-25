@@ -1,4 +1,4 @@
-# Eaton Drive v0.12.0 — launcher integration and optional floating Home
+# Eaton Drive v0.12.1 — floating Home portrait/landscape fix
 
 A native Java Android launcher and experimental offline sat-nav for the 2015–2018 Suzuki Celerio's third-party Rimoodly head unit, advertised as Android 11, 1024×600, 1GB RAM, 16GB storage.
 
@@ -103,3 +103,12 @@ Navigation is foreground-only and stops GPS when MapActivity loses focus; it doe
 - Added a head unit diagnostic view (Android release/build/model, display, RAM, Home selection, overlay permission) to assist tomorrow's verification. It cannot read proprietary MCU firmware IDs.
 - HOME launcher status and Radio/Music/Phone app assignment remain on device; active offline navigation continues through its separate location foreground service.
 - See **SUZUKI-HEAD-UNIT-TEST.md** for a parked test protocol and rollback steps. No custom ROM flash or firmware change is part of this release.
+
+
+## v0.12.1 — floating Home follow-up
+- Fixed an orientation-change bug: the optional floating Home overlay was explicitly stopped every time Android changed configuration. Opening a portrait music app from Eaton Drive's landscape launcher could immediately remove the button.
+- The overlay now remains active during display-rotation changes and clamps its position to visible screen bounds. Tap to return; drag to move; long-press or use the notification HIDE action to dismiss it.
+- New **SETTINGS → Floating Home diagnostics** shows enabled state, Android's draw-over-other-apps permission, last service state and any recorded start/rotation errors. The TEST action can be used on the launcher before opening Music.
+- Overlay support still depends on Android firmware and manufacturer-specific permissions; some phones/head units may prohibit it even with the Android permission allowed. A failed service startup now reports the exception class and records the reason.
+- **Safety:** if a proprietary reversing-camera, call or warning screen is obscured by the floating shortcut, disable it under Eaton Drive Settings and rely on the stereo's hardware/Android Home key. The shortcut is opt-in, off by default and never automatically started for PHONE.
+- Build is experimental and must be checked on the user's phone and Suzuki head unit. Previous debug APKs may need uninstall; back up imported offline datasets first.
