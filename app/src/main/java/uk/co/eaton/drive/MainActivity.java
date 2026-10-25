@@ -1,6 +1,13 @@
 package uk.co.eaton.drive;
 
 import android.Manifest;
+import android.app.role.RoleManager;
+import android.os.Build;
+import android.net.Uri;
+import android.content.Context;
+import android.app.ActivityManager;
+import android.content.res.Resources;
+import uk.co.eaton.drive.overlay.FloatingHomeService;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ComponentName;
@@ -44,6 +51,8 @@ import uk.co.eaton.drive.ui.SignatureIcon;
  */
 public final class MainActivity extends Activity {
     private static final int GPS_PERMISSION_REQUEST=901;
+    private static final int REQUEST_HOME_ROLE=902;
+    private boolean awaitingOverlayPermission;
     private static final int NAVY=0xff061323;
     private static final int PANEL_TOP=0xff123454;
     private static final int PANEL_BOTTOM=0xff071827;
@@ -329,16 +338,30 @@ public final class MainActivity extends Activity {
             .setNegativeButton("Close",null).show();
     }
     private void launchAssigned(String key) {
-        String saved = getPreferences(0).getString("app_" + key, null);
-        if (saved == null) { chooseApp(key); return; }
-        ComponentName component = ComponentName.unflattenFromString(saved);
-        if (component == null) { chooseApp(key); return; }
-        try {
-            Intent intent = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
-            intent.setComponent(component).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(intent);
-        } catch (RuntimeException ex) {
-            Toast.makeText(this, "App unavailable; please select another", Toast.LENGTH_LONG).show();
+        String saved=getPreferences(0).getString("app_"+key,null);
+        if(saved==null){chooseApp(key);return;}
+        ComponentName component=ComponentName.unflattenFromString(saved);
+        if(component==null){chooseApp(key);return;}
+        Intent intent=new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
+        intent.setComponent(component).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        boolean isMedia="radio".equals(key)||"music".equals(key);
+        boolean overlayStarted=false;
+        if(isMedia&&FloatingHomeService.enabled(this)&&FloatingHomeService.permitted(this)){
+            try {
+                Intent overlay=FloatingHomeService.showIntent(this);
+                if(Build.VERSION.SDK_INT>=26)startForegroundService(overlay);
+                else startService(overlay);
+                overlayStarted=true;
+            }catch(RuntimeException error){
+                Toast.makeText(this,"Floating Home not supported on this device",
+                    Toast.LENGTH_SHORT).show();
+            }
+        }
+        try{startActivity(intent);}
+        catch(RuntimeException ex){
+            if(overlayStarted)FloatingHomeService.hide(this);
+            Toast.makeText(this,"App unavailable; please select another",
+                Toast.LENGTH_LONG).show();
             chooseApp(key);
         }
     }
@@ -364,21 +387,194 @@ public final class MainActivity extends Activity {
         }).setNegativeButton("Cancel", null).show();
     }
     private void openSystemMenu() {
-        new AlertDialog.Builder(this).setTitle("Eaton Drive settings")
-            .setItems(new String[] { "Android settings", "Change default home app",
-                "Change radio app", "Change music app", "Change phone app" }, (d, item) -> {
-                if (item == 0) startActivity(new Intent(Settings.ACTION_SETTINGS));
-                if (item == 1) {
-                    try { startActivity(new Intent(Settings.ACTION_HOME_SETTINGS)); }
-                    catch (Exception ex) { startActivity(new Intent(Settings.ACTION_SETTINGS)); }
+        String overlayStatus=FloatingHomeService.enabled(this)?"ON":"OFF";
+        String launcherStatus=isDefaultHome()?"DEFAULT":"NOT SELECTED";
+        new AlertDialog.Builder(this).setTitle("Eaton Drive • System settings")
+            .setItems(new String[] {
+                "Default home launcher: "+launcherStatus,
+                "Floating Home for Radio/Music: "+overlayStatus,
+                "Test floating Home shortcut",
+                "Assign FM radio application",
+                "Assign music application",
+                "Assign Bluetooth phone application",
+                "Head unit diagnostic details",
+                "Open Android settings"
+            },(d,item)->{
+                switch(item){
+                    case 0:requestDefaultHome();break;
+                    case 1:toggleOverlay();break;
+                    case 2:testOverlay();break;
+                    case 3:chooseApp("radio");break;
+                    case 4:chooseApp("music");break;
+                    case 5:chooseApp("phone");break;
+                    case 6:showDeviceDetails();break;
+                    case 7:
+                        try{startActivity(new Intent(Settings.ACTION_SETTINGS));}
+                        catch(RuntimeException ex){Toast.makeText(this,
+                            "Android Settings unavailable",Toast.LENGTH_LONG).show();}
+                        break;
+                    default:break;
                 }
-                if (item == 2) chooseApp("radio");
-                if (item == 3) chooseApp("music");
-                if (item == 4) chooseApp("phone");
-            }).setNegativeButton("Cancel", null).show();
+            }).setNegativeButton("Close",null).show();
+    }
+    private boolean isDefaultHome() {
+        if(Build.VERSION.SDK_INT>=29){
+            try{
+                RoleManager rm=getSystemService(RoleManager.class);
+                if(rm!=null&&rm.isRoleAvailable(RoleManager.ROLE_HOME))
+                    return rm.isRoleHeld(RoleManager.ROLE_HOME);
+            }catch(RuntimeException ignored){}
+        }
+        Intent home=new Intent(Intent.ACTION_MAIN);
+        home.addCategory(Intent.CATEGORY_HOME);
+        ResolveInfo match=getPackageManager().resolveActivity(home,
+            PackageManager.MATCH_DEFAULT_ONLY);
+        return match!=null&&match.activityInfo!=null
+            &&getPackageName().equals(match.activityInfo.packageName);
+    }
+    private void requestDefaultHome() {
+        if(isDefaultHome()) {
+            new AlertDialog.Builder(this).setTitle("Eaton Drive is Home")
+                .setMessage("Eaton Drive is already the selected Android launcher. "
+                    +"Test ignition sleep/restart as the stereo may override Home.")
+                .setPositiveButton("OK",null).show();return;
+        }
+        if(Build.VERSION.SDK_INT>=29){
+            try{
+                RoleManager rm=getSystemService(RoleManager.class);
+                if(rm!=null&&rm.isRoleAvailable(RoleManager.ROLE_HOME)){
+                    startActivityForResult(
+                        rm.createRequestRoleIntent(RoleManager.ROLE_HOME),
+                        REQUEST_HOME_ROLE);
+                    return;
+                }
+            }catch(RuntimeException ignored){}
+        }
+        try{startActivity(new Intent(Settings.ACTION_HOME_SETTINGS));}
+        catch(RuntimeException ex){
+            try{startActivity(new Intent(Settings.ACTION_SETTINGS));}
+            catch(RuntimeException ignored){
+                Toast.makeText(this,"Manufacturer disabled Home settings",
+                    Toast.LENGTH_LONG).show();
+            }
+        }
+    }
+    private void toggleOverlay() {
+        if(FloatingHomeService.enabled(this)){
+            setOverlayEnabled(false);
+            Toast.makeText(this,"Floating Home disabled",Toast.LENGTH_SHORT).show();
+            return;
+        }
+        new AlertDialog.Builder(this)
+            .setTitle("Enable floating Home?")
+            .setMessage("Shows a small draggable Home button when you open Radio or Music "
+                +"from Eaton Drive. It requires Android's Draw over other apps permission. "
+                +"It will NOT run automatically when the car starts. "
+                +"On some head units the button may appear over a reverse-camera or "
+                +"system warning screen. TEST WHILE PARKED; turn it off if anything "
+                +"is obstructed. Long-press the button or use the notification to hide it. "
+                +"No floating button is shown over the Phone shortcut by design.")
+            .setPositiveButton("CONTINUE",(dialog,which)->requestOverlayPermission())
+            .setNegativeButton("CANCEL",null).show();
+    }
+    private void setOverlayEnabled(boolean enabled){
+        getSharedPreferences(FloatingHomeService.PREFS,MODE_PRIVATE).edit()
+            .putBoolean(FloatingHomeService.ENABLED,enabled).apply();
+        if(!enabled)FloatingHomeService.hide(this);
+    }
+    private void requestOverlayPermission(){
+        if(FloatingHomeService.permitted(this)){
+            setOverlayEnabled(true);
+            Toast.makeText(this,"Floating Home enabled for Radio and Music",
+                Toast.LENGTH_LONG).show();
+            return;
+        }
+        awaitingOverlayPermission=true;
+        try{
+            Intent manage=new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION);
+            if(Build.VERSION.SDK_INT<30)
+                manage.setData(Uri.parse("package:"+getPackageName()));
+            startActivity(manage);
+        }catch(RuntimeException ex){
+            awaitingOverlayPermission=false;
+            Toast.makeText(this,"This Android firmware has no overlay permission screen. "
+                +"Use the normal Home key instead.",Toast.LENGTH_LONG).show();
+        }
+    }
+    private void testOverlay(){
+        if(!FloatingHomeService.enabled(this)||!FloatingHomeService.permitted(this)){
+            new AlertDialog.Builder(this).setTitle("Floating Home not active")
+                .setMessage("Enable floating Home in Eaton Drive settings first.")
+                .setPositiveButton("ENABLE",(d,w)->toggleOverlay())
+                .setNegativeButton("Cancel",null).show();
+            return;
+        }
+        try{
+            Intent show=FloatingHomeService.showIntent(this);
+            if(Build.VERSION.SDK_INT>=26)startForegroundService(show);
+            else startService(show);
+            Toast.makeText(this,
+                "Tap floating house to return • drag to reposition • hold to hide",
+                Toast.LENGTH_LONG).show();
+        }catch(RuntimeException ex){
+            Toast.makeText(this,"Floating Home was blocked by this head unit",
+                Toast.LENGTH_LONG).show();
+        }
+    }
+    private void showDeviceDetails(){
+        android.util.DisplayMetrics display=getResources().getDisplayMetrics();
+        ActivityManager activity=(ActivityManager)getSystemService(ACTIVITY_SERVICE);
+        String ram="?";
+        if(activity!=null){
+            ActivityManager.MemoryInfo info=new ActivityManager.MemoryInfo();
+            activity.getMemoryInfo(info);
+            ram=String.format(Locale.UK,"%.1f GB",info.totalMem/1073741824d);
+        }
+        String info="Manufacturer: "+Build.MANUFACTURER
+            +"\\nModel: "+Build.MODEL
+            +"\\nAndroid: "+Build.VERSION.RELEASE+" (SDK "+Build.VERSION.SDK_INT+")"
+            +"\\nBuild display: "+Build.DISPLAY
+            +"\\nDisplay: "+display.widthPixels+" × "+display.heightPixels+" pixels"
+            +"\\nDensity: "+Math.round(display.densityDpi)+" dpi"
+            +"\\nApprox. total RAM: "+ram
+            +"\\nDefault Home: "+(isDefaultHome()?"Eaton Drive":"Other / not selected")
+            +"\\nFloating Home permission: "+(FloatingHomeService.permitted(this)?"Granted":"Not granted")
+            +"\\n\\nMCU version and chipset are not available through standard Android APIs. "
+            +"For tomorrow's car check, photograph the stereo's Settings → About device "
+            +"and MCU/system information.";
+        // The string is formatted with ordinary newlines in the final alert.
+        info=info.replace("\\n","\n");
+        new AlertDialog.Builder(this)
+            .setTitle("Head unit test details")
+            .setMessage(info)
+            .setPositiveButton("OPEN ANDROID SETTINGS",(d,w)->{
+                try{startActivity(new Intent(Settings.ACTION_SETTINGS));}
+                catch(RuntimeException ignored){}
+            }).setNegativeButton("CLOSE",null).show();
+    }
+    @Override protected void onActivityResult(int requestCode,int resultCode,Intent data){
+        super.onActivityResult(requestCode,resultCode,data);
+        if(requestCode==REQUEST_HOME_ROLE){
+            Toast.makeText(this,isDefaultHome()
+                ?"Eaton Drive is now the Home launcher"
+                :"Home role not changed; check manufacturer Settings",
+                Toast.LENGTH_LONG).show();
+        }
     }
     @Override protected void onResume() {
         super.onResume();
+        // Returning Home tears down the optional floating overlay, while an
+        // active navigation service continues independently.
+        FloatingHomeService.hide(this);
+        if(awaitingOverlayPermission){
+            awaitingOverlayPermission=false;
+            boolean granted=FloatingHomeService.permitted(this);
+            setOverlayEnabled(granted);
+            Toast.makeText(this,granted
+                ?"Floating Home enabled — open RADIO or MUSIC to test"
+                :"Overlay permission not granted — Home key remains available",
+                Toast.LENGTH_LONG).show();
+        }
         if (gps != null) {
             if (!gps.hasPermission()) requestPermissions(new String[] { Manifest.permission.ACCESS_FINE_LOCATION }, GPS_PERMISSION_REQUEST);
             else gps.start();
