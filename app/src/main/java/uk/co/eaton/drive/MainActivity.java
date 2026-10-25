@@ -344,9 +344,9 @@ public final class MainActivity extends Activity {
         if(component==null){chooseApp(key);return;}
         Intent intent=new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
         intent.setComponent(component).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        boolean isMedia="radio".equals(key)||"music".equals(key);
         boolean overlayStarted=false;
-        if(isMedia&&FloatingHomeService.enabled(this)&&FloatingHomeService.permitted(this)){
+        if(uk.co.eaton.drive.overlay.OverlayRules.showForShortcut(key,
+            FloatingHomeService.enabled(this),FloatingHomeService.permitted(this))){
             try {
                 Intent overlay=FloatingHomeService.showIntent(this);
                 if(Build.VERSION.SDK_INT>=26)startForegroundService(overlay);
