@@ -1,4 +1,4 @@
-# Eaton Drive v0.10.0 — Signature dashboard visual refresh
+# Eaton Drive v0.11.0 — Signature polish, saved Home and favourites
 
 A native Java Android launcher and experimental offline sat-nav for the 2015–2018 Suzuki Celerio's third-party Rimoodly head unit, advertised as Android 11, 1024×600, 1GB RAM, 16GB storage.
 
@@ -77,3 +77,20 @@ Navigation is foreground-only and stops GPS when MapActivity loses focus; it doe
 - Toolbar apps-grid opens other installed Android apps; SETTINGS provides app assignment and Android settings. Long-pressing RADIO/MUSIC/PHONE still allows selecting the appropriate OEM app for each tile.
 - Native navigation screen, BRouter engine, postcodes, address index, road tiles and all offline files are unchanged.
 - **Known limitation:** visual layout is CI-tested but still needs installation and visual inspection on the exact head unit. OEM app launch behaviour and navigation features are unvalidated in a moving vehicle. Do not use for sole driving guidance.
+
+
+## v0.11.0: unified UI and saved destinations
+- **Launcher layout polish:** one adaptive native Android layout, compact typography/icons for low-dp landscape phones; optimised for 1024×600 vehicle displays. GPS speed digits use a fixed vertical slot, the MPH legend no longer jumps, and the light-blue Suzuki Celerio expands into available height with correct aspect ratio.
+- **Signature navigation styling:** navy gradient toolbar/footer, teal-accented EATON DRIVE heading, refined rounded buttons and a prominent destination search field. Route preview, GPS speed, pin/dropper, BRouter avoidance, alternative route and foreground voice remain unchanged.
+- **Compact HOME button:** sets a previously saved home as the destination and centres the map; if none is saved, offers to save the currently selected point, or choose a destination first. HOME does not consume map viewport space.
+- **SAVED button:** opens Home and a list of up to 24 named favourites; tapping an entry selects it as the next destination. SAVE CURRENT gives a selected map pin, postcode or street a descriptive label. MANAGE supports rename, delete and setting a favourite as Home. Clear Home has a confirmation dialogue.
+- Places are saved **fully offline** in a small dedicated Android SharedPreferences file using lossless double-coordinate encoding. Name lengths and coordinate ranges are validated, and changes are committed as a single transaction. No network, account, database download or new Android permission.
+- Shortcuts remain across app restarts and normal in-place updates. **Uninstalling temporary debug APKs may erase saved Home/favourites and maps**; preserve the original offline data packs and record important favourite addresses before uninstalling. Permanent signing remains optional and unconfigured.
+- Safety: selecting Home/favourites does not automatically start navigation; driver must use PLAN/GO. House numbers and postcode-centre approximations remain approximate when their underlying offline data does not identify a specific entrance. Continue stationary/passenger testing until verified.
+
+### Phone and head-unit test checklist
+1. On a test device, choose a postcode or PIN, use HOME > SAVE HOME, exit and reopen; HOME should recall the saved point.
+2. Choose another location, open SAVED > SAVE CURRENT, name it. Close/reopen and select it from SAVED. Use MANAGE to rename, make it Home, and delete the favourite.
+3. PLAN an offline journey with previously imported .map and .rd5 files; confirm the saved point is shown before starting GO.
+4. Compare the launcher at landscape phone, tablet and 1024×600: no clipped MPH digits, no oversized car, tappable NAVIGATION/RADIO/MUSIC/PHONE and SETTINGS.
+5. Check that background voice, GPS position and directions still behave as in v0.10.0.
