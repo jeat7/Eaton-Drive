@@ -12,6 +12,9 @@ public final class RouteOptions {
         this.avoidTolls = avoidTolls;
         this.alternativeIndex = alternativeIndex;
     }
+    /** BRouter's profile overrides are numeric, not Java boolean strings. */
+    public String motorwaysFlag() { return avoidMotorways ? "1" : "0"; }
+    public String tollsFlag() { return avoidTolls ? "1" : "0"; }
     public RouteOptions alternative() {
         return new RouteOptions(avoidMotorways, avoidTolls, 1);
     }
