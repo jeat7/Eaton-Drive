@@ -40,6 +40,10 @@ public final class VoiceGuide implements TextToSpeech.OnInitListener {
         ready = true; state = "Offline voice ready";
     }
     public String status() { return enabled ? state : "Voice muted"; }
+    public void setEnabled(boolean value) {
+        enabled=value;
+        if (!enabled && engine != null) engine.stop();
+    }
     public boolean toggle() {
         enabled = !enabled;
         if (!enabled && engine != null) engine.stop();

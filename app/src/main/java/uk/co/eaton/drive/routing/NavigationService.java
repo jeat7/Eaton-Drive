@@ -73,10 +73,8 @@ public final class NavigationService extends Service {
             channel.setDescription("Current turn and Stop Navigation controls");
             nm.createNotificationChannel(channel);
         }
-        router=new EmbeddedRouter(this);
         gps=new GpsTracker(this,this::onGps);
-        voice=new VoiceGuide(this);
-        voice.setEnabled(getSharedPreferences("navigation",MODE_PRIVATE).getBoolean("voice_enabled",true));
+        // Allocate routing and speech only when GO actually starts navigation.
     }
     @Override public IBinder onBind(Intent intent){return binder;}
     public void observe(Observer target){
@@ -107,6 +105,9 @@ public final class NavigationService extends Service {
                 startForeground(NOTIFICATION_ID,notification("Preparing offline navigation"));
                 hasStartedForeground=true;
             }
+            if(router==null)router=new EmbeddedRouter(this);
+            if(voice==null)voice=new VoiceGuide(this);
+            voice.setEnabled(getSharedPreferences("navigation",MODE_PRIVATE).getBoolean("voice_enabled",true));
             RouteStorage.Saved saved=RouteStorage.load(this);
             route=saved.route;options=saved.options;
             session=new NavigationSession(route);
@@ -143,10 +144,7 @@ public final class NavigationService extends Service {
         instruction=TurnDisplay.nextInstruction(result,session.hasTurns());
         message=result.display;
         if(result.speak!=null&&voice!=null)voice.say(result.speak);
-        if(result.arrived){
-            if(voice!=null&&result.speak!=null)voice.say(result.speak);
-            finishNavigation(true);return;
-        }
+        if(result.arrived){finishNavigation(true);return;}
         if(result.reroute)reroute(fix);
         updateNotification(false);
         notifyObserver();
@@ -216,6 +214,7 @@ public final class NavigationService extends Service {
     }
     private void finishNavigation(boolean arrived){
         active=false;rerouting=false;
+        if(!arrived)RouteStorage.clear(this);
         if(gps!=null)gps.stop();
         if(arrived) {
             instruction="Destination reached";
