@@ -18,6 +18,7 @@ public final class NavigationSession {
     }
     private RouteParser.Route route;
     private int progress;
+    private double[] suffixMiles;
     private int upcoming;
     private int announcedStage;
     private int offRouteFixes;
@@ -29,8 +30,16 @@ public final class NavigationSession {
     public void reset(RouteParser.Route next) {
         route = next; progress = 0; upcoming = 0; announcedStage = 0;
         offRouteFixes = 0; reroutePending = false; finished = false;
+        int count = route.points.size();
+        suffixMiles = new double[count];
+        for (int i = count - 2; i >= 0; i--)
+            suffixMiles[i] = suffixMiles[i+1]
+                + RouteParser.distanceMiles(route.points.get(i),route.points.get(i+1));
     }
     public boolean hasTurns() { return !route.turns.isEmpty(); }
+    public double remainingMiles() {
+        return suffixMiles[Math.min(progress,suffixMiles.length-1)];
+    }
 
     public Update locate(RouteParser.Point gps, float accuracyM, long elapsedMs) {
         if (finished) return new Update("Arrived", null, false, true);

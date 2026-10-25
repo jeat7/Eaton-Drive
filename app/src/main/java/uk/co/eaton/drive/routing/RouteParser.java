@@ -43,10 +43,18 @@ public final class RouteParser {
         public final List<Point> points;
         public final List<Turn> turns;
         public final double miles;
+        public final int estimatedSeconds;
         Route(List<Point> points, List<Turn> turns, double miles) {
+            this(points,turns,miles,0);
+        }
+        Route(List<Point> points, List<Turn> turns, double miles, int estimatedSeconds) {
             this.points = Collections.unmodifiableList(points);
             this.turns = Collections.unmodifiableList(turns);
             this.miles = miles;
+            this.estimatedSeconds = Math.max(0,estimatedSeconds);
+        }
+        public Route withEstimatedSeconds(int seconds) {
+            return new Route(points,turns,miles,seconds);
         }
     }
     public static Route parse(String source) throws Exception {

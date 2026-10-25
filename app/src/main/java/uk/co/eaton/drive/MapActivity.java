@@ -29,6 +29,9 @@ import org.mapsforge.core.graphics.Style;
 import org.mapsforge.map.layer.overlay.Polyline;
 import org.mapsforge.map.layer.overlay.FixedPixelCircle;
 import uk.co.eaton.drive.routing.EmbeddedRouter;
+import uk.co.eaton.drive.routing.RouteOptions;
+import uk.co.eaton.drive.ui.CarMarkerView;
+import uk.co.eaton.drive.ui.DestinationPinView;
 import uk.co.eaton.drive.routing.OfflineRoadImporter;
 import java.util.List;
 import uk.co.eaton.drive.routing.RouteParser;
@@ -66,7 +69,9 @@ public final class MapActivity extends Activity {
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
     private MapView mapView;
-    private TextView status, placeholder, speed;
+    private TextView status, placeholder, speed, routeInfo, pinButton;
+    private CarMarkerView carMarker;
+    private DestinationPinView centrePin;
     private GpsTracker gps;
     private Location lastFix;
     private MultiMapDataStore mapFileReader;
@@ -75,6 +80,9 @@ public final class MapActivity extends Activity {
     private PostcodeStore postcodes;
     private VoiceGuide voice;
     private NavigationSession navigation;
+    private RouteParser.Route plannedRoute, primaryRoute, alternativeRoute;
+    private boolean selectedAlternative;
+    private boolean choosingPin;
     private boolean routeCalculating;
     private boolean stopped;
     private boolean autoCentredOnGps;
@@ -131,14 +139,36 @@ public final class MapActivity extends Activity {
         row1.addView(title, DriveUi.weighted(0, -1, 1f));
         addButton(row1, "GPS", this::centreOnGps);
         addButton(row1, "VOICE", this::toggleVoice);
+        addButton(row1, "SETUP", this::openSetup);
         addButton(row2, "POSTCODE", this::enterPostcode);
-        addButton(row2, "MAP DEST", this::selectMapCentre);
-        addButton(row2, "START ROUTE", () -> calculateRoute(false));
+        pinButton = addButton(row2, "MAP PIN", this::selectMapCentre);
+        addButton(row2, "PLAN", () -> calculateRoute(false));
+        addButton(row2, "OTHER ROUTE", this::chooseAlternative);
+        addButton(row2, "GO", this::startGuidance);
+        addButton(row2, "OPTIONS", this::showRouteOptions);
         addButton(row2, "STOP", this::clearNavigation);
-        addButton(row2, "IMPORT MAP", this::importMap);
-        addButton(row2, "DATA", this::showDataStatus);
-        addButton(row2, "ROADS", this::configureRoads);
         outer.addView(toolbar, new FrameLayout.LayoutParams(-1, DriveUi.dp(this, 90), Gravity.TOP));
+        // The pin's tip is exactly at the map centre. Only shown while selecting manually.
+        centrePin = new DestinationPinView(this);
+        FrameLayout.LayoutParams pinParams = new FrameLayout.LayoutParams(
+            DriveUi.dp(this, 58), DriveUi.dp(this, 100), Gravity.CENTER);
+        outer.addView(centrePin,pinParams);
+        centrePin.setVisibility(View.GONE);
+        // Route summary remains readable above roads; the car follows GPS during GO.
+        routeInfo = DriveUi.text(this,"",15,DriveUi.TEXT,true);
+        routeInfo.setGravity(Gravity.CENTER);
+        routeInfo.setBackground(DriveUi.bg(this,DriveUi.PANEL,13,true));
+        DriveUi.pad(this,routeInfo,12,9);
+        FrameLayout.LayoutParams infoParams = new FrameLayout.LayoutParams(
+            -2,DriveUi.dp(this,53),Gravity.TOP|Gravity.RIGHT);
+        infoParams.topMargin = DriveUi.dp(this,95);
+        infoParams.rightMargin = DriveUi.dp(this,13);
+        outer.addView(routeInfo,infoParams);
+        routeInfo.setVisibility(View.GONE);
+        carMarker = new CarMarkerView(this);
+        FrameLayout.LayoutParams carParams = new FrameLayout.LayoutParams(
+            DriveUi.dp(this,72),DriveUi.dp(this,72),Gravity.CENTER);
+        outer.addView(carMarker,carParams);
 
         LinearLayout footer = DriveUi.row(this);
         footer.setGravity(Gravity.CENTER_VERTICAL);
@@ -150,7 +180,7 @@ public final class MapActivity extends Activity {
         footer.addView(speed);
         outer.addView(footer, new FrameLayout.LayoutParams(-1, DriveUi.dp(this, 63), Gravity.BOTTOM));
     }
-    private void addButton(LinearLayout row, String label, Runnable action) {
+    private TextView addButton(LinearLayout row, String label, Runnable action) {
         TextView button = DriveUi.text(this, label, 12, DriveUi.TEAL, true);
         button.setGravity(Gravity.CENTER);
         button.setBackground(DriveUi.bg(this, DriveUi.PANEL2, 10, true));
@@ -159,6 +189,7 @@ public final class MapActivity extends Activity {
         lp.setMargins(DriveUi.dp(this, 3), DriveUi.dp(this, 3), DriveUi.dp(this, 3), DriveUi.dp(this, 3));
         row.addView(button, lp);
         button.setOnClickListener(v -> action.run());
+        return button;
     }
     private void setMessage(String message) {
         if (status != null) status.setText(message);
@@ -314,6 +345,41 @@ public final class MapActivity extends Activity {
             });
         });
     }
+    private void openSetup() {
+        String[] choices = {"Import map regions","Import driving roads","Offline data status"};
+        new AlertDialog.Builder(this).setTitle("Eaton Drive setup")
+            .setItems(choices,(d,index) -> {
+                if (index == 0) importMap();
+                if (index == 1) configureRoads();
+                if (index == 2) showDataStatus();
+            }).setNegativeButton("Close",null).show();
+    }
+    private RouteOptions preferredOptions(int alternate) {
+        android.content.SharedPreferences prefs = getPreferences(0);
+        return new RouteOptions(prefs.getBoolean("avoid_motorways",false),
+            prefs.getBoolean("avoid_tolls",false),alternate);
+    }
+    private void showRouteOptions() {
+        android.content.SharedPreferences prefs = getPreferences(0);
+        final boolean[] toggles = {prefs.getBoolean("avoid_motorways",false),
+            prefs.getBoolean("avoid_tolls",false)};
+        new AlertDialog.Builder(this).setTitle("Route preferences")
+            .setMultiChoiceItems(new String[] {"Avoid motorways","Avoid toll roads"},toggles,
+                (d,idx,isChecked) -> toggles[idx]=isChecked)
+            .setPositiveButton("Save", (d,w) -> {
+                boolean changed = toggles[0] != prefs.getBoolean("avoid_motorways",false)
+                    || toggles[1] != prefs.getBoolean("avoid_tolls",false);
+                prefs.edit().putBoolean("avoid_motorways",toggles[0])
+                    .putBoolean("avoid_tolls",toggles[1]).apply();
+                if (changed && destination != null) {
+                    plannedRoute = null; primaryRoute = null; alternativeRoute = null;
+                    navigation = null; selectedAlternative = false;
+                    removeRouteOverlay();
+                    routeInfo.setVisibility(View.GONE);
+                    status.setText("Preferences saved • Tap PLAN to recalculate");
+                }
+            }).setNegativeButton("Cancel",null).show();
+    }
     private void enterPostcode() {
         if (!postcodes.installed()) {
             new AlertDialog.Builder(this).setTitle("Offline postcodes")
@@ -431,74 +497,182 @@ public final class MapActivity extends Activity {
             .apply();
     }
     private void centreOnGps() {
+        userMovedMap = false;
         if (!mapReady) { Toast.makeText(this, "Import a map first", Toast.LENGTH_SHORT).show(); return; }
         if (lastFix == null) { Toast.makeText(this, "Waiting for GPS", Toast.LENGTH_SHORT).show(); return; }
         mapView.setCenter(new LatLong(lastFix.getLatitude(), lastFix.getLongitude()));
         mapView.setZoomLevel((byte) 16);
     }
     private void selectMapCentre() {
-        if (!mapReady) { Toast.makeText(this, "Import a map first", Toast.LENGTH_SHORT).show(); return; }
-        LatLong target = mapView.getModel().mapViewPosition.getCenter();
-        setDestination(new RouteParser.Point(target.latitude, target.longitude));
-        status.setText("Map destination set • Press START ROUTE");
+        if (!mapReady) { Toast.makeText(this,"Import a map first",Toast.LENGTH_SHORT).show(); return; }
+        if (!choosingPin) {
+            choosingPin = true;
+            userMovedMap = true;
+            centrePin.setVisibility(View.VISIBLE);
+            pinButton.setText("SET PIN");
+            status.setText("Move the map until the pin tip touches your destination, then tap SET PIN");
+            return;
+        }
+        LatLong centre = mapView.getModel().mapViewPosition.getCenter();
+        setDestination(new RouteParser.Point(centre.latitude, centre.longitude));
+        choosingPin = false;
+        centrePin.setVisibility(View.GONE);
+        pinButton.setText("MAP PIN");
+        status.setText("Destination selected • Tap PLAN");
     }
     private void setDestination(RouteParser.Point point) {
-        destination = point; stopped = false;
-        navigation = null;
+        destination = point;
+        stopped = false;
+        plannedRoute = null; primaryRoute = null; alternativeRoute = null;
+        selectedAlternative = false; navigation = null;
         removeRouteOverlay();
+        routeInfo.setVisibility(View.GONE);
         if (destinationOverlay != null) mapView.getLayerManager().getLayers().remove(destinationOverlay);
         if (mapReady) {
             Paint fill = AndroidGraphicFactory.INSTANCE.createPaint();
             fill.setColor(DriveUi.TEAL); fill.setStyle(Style.FILL);
             destinationOverlay = new FixedPixelCircle(new LatLong(point.lat,point.lon),
-                DriveUi.dp(this, 10), fill, null);
+                DriveUi.dp(this,11),fill,null);
             mapView.getLayerManager().getLayers().add(destinationOverlay);
         }
     }
     private void calculateRoute(boolean automatic) {
-        if (!mapReady) { Toast.makeText(this, "Import a map first", Toast.LENGTH_LONG).show(); return; }
+        if (!mapReady) { Toast.makeText(this,"Import a map first",Toast.LENGTH_LONG).show(); return; }
         if (routing.segmentCount() == 0) { configureRoads(); return; }
-        if (destination == null) { Toast.makeText(this, "Pan the map to the destination and press SET DEST", Toast.LENGTH_LONG).show(); return; }
+        if (destination == null) { status.setText("Enter a postcode or choose MAP PIN"); return; }
         if (lastFix == null || !lastFix.hasAccuracy() || lastFix.getAccuracy() > 45f) {
-            status.setText("Waiting for accurate GPS to calculate the route"); return;
+            status.setText("Waiting for accurate GPS: move outdoors and enable precise location"); return;
         }
         if (routeCalculating) return;
         routeCalculating = true;
         stopped = false;
         RouteParser.Point requestedDestination = destination;
-        RouteParser.Point start = new RouteParser.Point(lastFix.getLatitude(), lastFix.getLongitude());
-        status.setText(automatic ? "Off route • recalculating offline..." : "Calculating offline driving route...");
-        routing.request(start, destination, (route, error) -> {
+        RouteParser.Point start = new RouteParser.Point(lastFix.getLatitude(),lastFix.getLongitude());
+        int index = automatic && selectedAlternative ? 1 : 0;
+        status.setText(automatic ? "Recalculating offline route..." : "Finding the recommended driving route...");
+        routing.request(start,destination,preferredOptions(index),(route,error) -> {
             routeCalculating = false;
             if (stopped || requestedDestination != destination) return;
             if (error != null) {
                 status.setText("Route unavailable: " + error);
                 if (navigation != null) navigation.failedReroute();
                 if (!automatic) new AlertDialog.Builder(this).setTitle("Offline route unavailable")
-                    .setMessage(error + "\n\nCheck that the destination is within the downloaded UK road coverage. You can import more road tiles using ROADS.")
-                    .setPositiveButton("Manage roads", (d,w) -> configureRoads())
-                    .setNegativeButton("Close", null).show();
+                    .setMessage(error + "\n\nCheck local routing tiles in SETUP.")
+                    .setPositiveButton("Setup",(d,w) -> configureRoads())
+                    .setNegativeButton("Close",null).show();
                 return;
             }
-            removeRouteOverlay();
-            Paint stroke = AndroidGraphicFactory.INSTANCE.createPaint();
-            stroke.setColor(DriveUi.TEAL);
-            stroke.setStyle(Style.STROKE);
-            stroke.setStrokeWidth(DriveUi.dp(this, 6));
-            routeOverlay = new Polyline(stroke, AndroidGraphicFactory.INSTANCE);
-            ArrayList<LatLong> points = new ArrayList<>(route.points.size());
-            for (RouteParser.Point point : route.points)
-                points.add(new LatLong(point.lat, point.lon));
-            routeOverlay.setPoints(points);
-            mapView.getLayerManager().getLayers().add(routeOverlay);
-            if (navigation == null) navigation = new NavigationSession(route);
-            else navigation.reset(route);
-            status.setText(String.format(Locale.UK, "Route: %.1f miles • %s • %s",
-                route.miles, navigation.hasTurns() ? "Guidance active" : "No turn data", voice.status()));
-            if (navigation.hasTurns()) voice.say(automatic ? "New route calculated" : "Navigation started");
-            mapView.setCenter(new LatLong(start.lat, start.lon));
-            mapView.setZoomLevel((byte) 16);
+            if (!automatic) {
+                primaryRoute = route;
+                alternativeRoute = null;
+                selectedAlternative = false;
+                navigation = null; // A route preview is not active guidance.
+            } else {
+                navigation = new NavigationSession(route);
+            }
+            plannedRoute = route;
+            displayRoute(route);
+            if (automatic) voice.say("Route recalculated");
+            else status.setText("Route ready • Tap GO to begin, or OTHER ROUTE to compare");
         });
+    }
+    private void displayRoute(RouteParser.Route route) {
+        removeRouteOverlay();
+        Paint stroke = AndroidGraphicFactory.INSTANCE.createPaint();
+        stroke.setColor(DriveUi.TEAL); stroke.setStyle(Style.STROKE);
+        stroke.setStrokeWidth(DriveUi.dp(this,6));
+        routeOverlay = new Polyline(stroke,AndroidGraphicFactory.INSTANCE);
+        ArrayList<LatLong> coordinates = new ArrayList<>(route.points.size());
+        for (RouteParser.Point point : route.points)
+            coordinates.add(new LatLong(point.lat,point.lon));
+        routeOverlay.setPoints(coordinates);
+        mapView.getLayerManager().getLayers().add(routeOverlay);
+        routeInfo.setText(routeSummary(route) + (navigation == null ? " • PREVIEW" : " • LIVE"));
+        routeInfo.setVisibility(View.VISIBLE);
+    }
+    private String routeSummary(RouteParser.Route route) {
+        int seconds = route.estimatedSeconds > 0
+            ? route.estimatedSeconds
+            : (int)Math.ceil(route.miles/35.0*3600.0);
+        int minutes = Math.max(1,(int)Math.ceil(seconds/60.0));
+        return String.format(Locale.UK,"%.1f miles • about %d min",route.miles,minutes);
+    }
+    private void chooseAlternative() {
+        if (primaryRoute == null || destination == null) {
+            status.setText("Calculate your main route first using PLAN"); return;
+        }
+        if (navigation != null) {
+            status.setText("Stop active guidance before selecting another route"); return;
+        }
+        if (alternativeRoute != null) { showRouteComparison(); return; }
+        if (routeCalculating) return;
+        if (lastFix == null || !lastFix.hasAccuracy() || lastFix.getAccuracy() > 45) {
+            status.setText("Alternative route needs an accurate GPS position"); return;
+        }
+        routeCalculating = true;
+        RouteParser.Point requested = destination;
+        status.setText("Looking for a second offline driving route...");
+        routing.request(new RouteParser.Point(lastFix.getLatitude(),lastFix.getLongitude()),
+            requested,preferredOptions(1),(route,error) -> {
+                routeCalculating = false;
+                if (stopped || destination != requested) return;
+                if (error != null) {
+                    status.setText("An alternative is unavailable: " + error);
+                    return;
+                }
+                alternativeRoute = route;
+                showRouteComparison();
+            });
+    }
+    private void showRouteComparison() {
+        if (primaryRoute == null || alternativeRoute == null) return;
+        RouteParser.Route[] routes = {primaryRoute,alternativeRoute};
+        int shortest = primaryRoute.miles <= alternativeRoute.miles ? 0 : 1;
+        int quickest = primaryRoute.estimatedSeconds > 0 && alternativeRoute.estimatedSeconds > 0
+            ? (primaryRoute.estimatedSeconds <= alternativeRoute.estimatedSeconds ? 0 : 1) : -1;
+        String[] labels = {
+            "Recommended • " + routeSummary(primaryRoute)
+                + (shortest==0 ? " • shorter" : "") + (quickest==0 ? " • quicker" : ""),
+            "Alternative • " + routeSummary(alternativeRoute)
+                + (shortest==1 ? " • shorter" : "") + (quickest==1 ? " • quicker" : "")
+        };
+        new AlertDialog.Builder(this).setTitle("Choose your route")
+            .setSingleChoiceItems(labels,selectedAlternative ? 1 : 0,(d,which) -> {
+                selectedAlternative = which == 1;
+                plannedRoute = routes[which];
+                displayRoute(plannedRoute);
+                status.setText("Selected " + (selectedAlternative?"alternative":"recommended")
+                    + " • Tap GO to start");
+                d.dismiss();
+            }).setNegativeButton("Cancel",null).show();
+    }
+    private void startGuidance() {
+        if (plannedRoute == null) {
+            status.setText("Calculate a route using PLAN first"); return;
+        }
+        if (lastFix == null || !lastFix.hasAccuracy() || lastFix.getAccuracy() > 45f) {
+            status.setText("Need an accurate GPS fix before guidance can begin"); return;
+        }
+        navigation = new NavigationSession(plannedRoute);
+        userMovedMap = false;
+        centrePin.setVisibility(View.GONE);
+        choosingPin = false;
+        pinButton.setText("MAP PIN");
+        status.setText(navigation.hasTurns() ? "Guidance started • following GPS"
+            : "Following GPS • route has no spoken-turn instructions");
+        displayRoute(plannedRoute);
+        voice.say("Navigation started");
+        followGps(lastFix);
+    }
+    private void followGps(Location location) {
+        if (location == null || !mapReady || !location.hasAccuracy()
+            || location.getAccuracy() > 45f) {
+            carMarker.update(0,false);
+            return;
+        }
+        if (!userMovedMap)
+            mapView.setCenter(new LatLong(location.getLatitude(),location.getLongitude()));
+        carMarker.update(location.hasBearing()?location.getBearing():0,true);
     }
     private void removeRouteOverlay() {
         if (routeOverlay != null) {
@@ -509,6 +683,12 @@ public final class MapActivity extends Activity {
     private void clearNavigation() {
         stopped = true;
         navigation = null;
+        plannedRoute = null; primaryRoute = null; alternativeRoute = null;
+        routeInfo.setVisibility(View.GONE);
+        carMarker.update(0,false);
+        choosingPin = false;
+        centrePin.setVisibility(View.GONE);
+        pinButton.setText("MAP PIN");
         if (voice != null) voice.say("Navigation stopped");
         destination = null;
         removeRouteOverlay();
@@ -528,16 +708,29 @@ public final class MapActivity extends Activity {
             mapView.setZoomLevel((byte)15);
             autoCentredOnGps = true;
         }
-        if (navigation == null || location == null || stopped || routeCalculating) return;
+        if (navigation == null || location == null || stopped || routeCalculating) {
+            if (navigation == null || location == null) carMarker.update(0,false);
+            return;
+        }
+        followGps(location);
         NavigationSession.Update update = navigation.locate(
             new RouteParser.Point(location.getLatitude(), location.getLongitude()),
             location.hasAccuracy() ? location.getAccuracy() : 999f,
             SystemClock.elapsedRealtime());
         status.setText(update.display);
+        if (plannedRoute != null && plannedRoute.miles > 0) {
+            double remaining = navigation.remainingMiles();
+            int totalSeconds = plannedRoute.estimatedSeconds > 0 ? plannedRoute.estimatedSeconds
+                : (int)Math.ceil(plannedRoute.miles/35.0*3600);
+            int minutes = Math.max(0,(int)Math.ceil(totalSeconds*remaining/plannedRoute.miles/60.0));
+            routeInfo.setText(String.format(Locale.UK,"%.1f mi left • ~%d min • LIVE",remaining,minutes));
+        }
         if (update.speak != null) voice.say(update.speak);
         if (update.reroute) calculateRoute(true);
         if (update.arrived) {
             navigation = null;
+            routeInfo.setText("Destination reached");
+            carMarker.update(0,false);
             status.setText("Destination reached");
         }
     }

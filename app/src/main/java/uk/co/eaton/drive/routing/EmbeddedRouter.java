@@ -8,6 +8,8 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -85,7 +87,13 @@ public final class EmbeddedRouter {
         }
     }
 
+    /** Compatible overload for automatic reroutes using default, unrestricted routing. */
     public void request(RouteParser.Point start, RouteParser.Point finish, Callback callback) {
+        request(start,finish,new RouteOptions(false,false,0),callback);
+    }
+
+    public void request(RouteParser.Point start, RouteParser.Point finish,
+                        RouteOptions options, Callback callback) {
         if (destroyed) { callback.completed(null,"Navigation screen closed"); return; }
         if (busy) { callback.completed(null, "A route calculation is already underway"); return; }
         if (segmentCount() == 0) {
@@ -104,6 +112,12 @@ public final class EmbeddedRouter {
                 RoutingContext rc = new RoutingContext();
                 rc.localFunction = profile.getAbsolutePath();
                 rc.turnInstructionMode = 3;  // OsmAnd GPX turn annotations for our voice parser
+                // Profile variables are parsed by BRouter and respected during routing.
+                Map<String,String> settings = new HashMap<>();
+                settings.put("avoid_motorways", Boolean.toString(options.avoidMotorways));
+                settings.put("avoid_toll", Boolean.toString(options.avoidTolls));
+                rc.keyValues = settings;
+                rc.setAlternativeIdx(options.alternativeIndex);
                 rc.outputFormat = "gpx";
                 rc.memoryclass = 48;         // Conservative for 1GB head unit
                 RoutingEngine engine = new RoutingEngine(null, null, roadDirectory(), waypoints, rc);
@@ -115,7 +129,8 @@ public final class EmbeddedRouter {
                 if (track == null) throw new IllegalStateException("No drivable route found using installed road data");
                 track.exportWaypoints = rc.exportWaypoints;
                 track.exportCorrectedWaypoints = rc.exportCorrectedWaypoints;
-                answer = RouteParser.parse(new FormatGpx(rc).format(track));
+                answer = RouteParser.parse(new FormatGpx(rc).format(track))
+                    .withEstimatedSeconds(track.getTotalSeconds());
             } catch (Exception exception) {
                 String detail = exception.getMessage();
                 error = (detail == null || detail.isEmpty()) ? exception.getClass().getSimpleName() : detail;
