@@ -105,8 +105,9 @@ public final class AddressStore {
             lastSearchError = "Offline address index is not installed";
             return results;
         }
+        AddressQuery.Parts parts = AddressQuery.parse(text);
         String match = AddressQuery.matchExpression(text);
-        if (match.isEmpty()) return results;
+        if (match.isEmpty() || parts.street.isEmpty()) return results;
         try (SQLiteDatabase db = SQLiteDatabase.openDatabase(database().getAbsolutePath(),null,SQLiteDatabase.OPEN_READONLY)) {
             // v2 includes locally computed neighbourhood and postcode district.
             boolean rich = db.getVersion() >= 2;
@@ -114,39 +115,47 @@ public final class AddressStore {
             // First use the indexed lookup, which is fast for 400,000+ records.
             try {
                 String sql = "SELECT " + columns + " FROM locations WHERE locations MATCH ? ";
+                // For street-only queries show the road itself before a long list
+                // of individually mapped house numbers. Exact house searches skip this.
+                if (!parts.hasHouse()) sql += "ORDER BY CASE WHEN kind='road' THEN 0 ELSE 1 END, ";
+                else sql += "ORDER BY ";
                 String[] args;
                 if (near != null) {
-                    sql += "ORDER BY ((CAST(lat AS REAL)-?)*(CAST(lat AS REAL)-?)"
+                    sql += "((CAST(lat AS REAL)-?)*(CAST(lat AS REAL)-?)"
                         + "+0.37*(CAST(lon AS REAL)-?)*(CAST(lon AS REAL)-?)) LIMIT 40";
                     args = new String[]{match,Double.toString(near.lat),Double.toString(near.lat),
                         Double.toString(near.lon),Double.toString(near.lon)};
                 } else {
-                    sql += "LIMIT 40";
+                    sql += "name COLLATE NOCASE LIMIT 40";
                     args = new String[]{match};
                 }
                 try (Cursor c = db.rawQuery(sql,args)) {
-                    read(c,results);
+                    read(c,results,parts);
                 }
             } catch (RuntimeException ftsProblem) {
                 lastSearchError = "Indexed search: " + ftsProblem.getClass().getSimpleName()
                     + ": " + ftsProblem.getMessage();
             }
-            // Android device SQLite versions differ. Fall back to an exact street
-            // substring search (not generic full-table postcode geocoding).
-            if (results.isEmpty()) {
-                String street = text == null ? "" : text.trim();
-                if (street.length() > 1 && street.length() < 120) {
-                    String sql = "SELECT " + columns + " FROM locations"
-                        + " WHERE LOWER(name) LIKE ? ESCAPE '\\' LIMIT 40";
-                    String safe = street.toLowerCase(Locale.UK)
-                        .replace("\\","\\\\").replace("%","\\%").replace("_","\\_");
-                    try (Cursor c = db.rawQuery(sql,new String[]{"%"+safe+"%"})) {
-                        read(c,results);
-                        if (!results.isEmpty()) lastSearchError = "";
-                    } catch (RuntimeException fallbackProblem) {
-                        lastSearchError += " / Street fallback: "
-                            + fallbackProblem.getClass().getSimpleName() + ": " + fallbackProblem.getMessage();
-                    }
+            // FTS4 behaviour can differ on vendor Android builds. If necessary,
+            // retry with ordinary SQLite string comparisons, keeping the house
+            // number separate from the street name. Never match arbitrary house 218.
+            if (results.isEmpty() && parts.street.length() > 1 && parts.street.length() < 120) {
+                String sql = "SELECT " + columns + " FROM locations"
+                    + " WHERE instr(LOWER(name), ?) > 0";
+                String[] args;
+                if (parts.hasHouse()) {
+                    sql += " AND LOWER(house) = ? LIMIT 40";
+                    args = new String[]{parts.street, parts.house};
+                } else {
+                    sql += " ORDER BY CASE WHEN kind='road' THEN 0 ELSE 1 END LIMIT 40";
+                    args = new String[]{parts.street};
+                }
+                try (Cursor c = db.rawQuery(sql,args)) {
+                    read(c,results,parts);
+                    if (!results.isEmpty()) lastSearchError = "";
+                } catch (RuntimeException fallbackProblem) {
+                    lastSearchError += " / Address fallback: "
+                        + fallbackProblem.getClass().getSimpleName() + ": " + fallbackProblem.getMessage();
                 }
             }
         } catch (RuntimeException openProblem) {
@@ -154,10 +163,14 @@ public final class AddressStore {
         }
         return results;
     }
-    private static void read(Cursor c, List<Result> results) {
+    private static void read(Cursor c, List<Result> results, AddressQuery.Parts parts) {
         while (c.moveToNext()) {
             String road = c.getString(0), house = c.getString(1), place = c.getString(2);
             if (road == null || road.trim().isEmpty()) continue;
+            // Safeguard against approximate FTS matches where a number appears
+            // in another field, such as a locality or road name.
+            if (parts.hasHouse() && (house == null || !house.equalsIgnoreCase(parts.house)))
+                continue;
             String locality = c.getColumnCount() > 5 ? c.getString(5) : "";
             String district = c.getColumnCount() > 6 ? c.getString(6) : "";
             String label = AddressLabel.format(road,house,place,locality,district);
