@@ -524,7 +524,7 @@ public final class MapActivity extends Activity {
                                     + "\n\nTry reinstalling the offline address index in SETUP."
                                 : "No mapped results for this query. Try the street name only, "
                                     + "or verify the index under SETUP > Offline data status. "
-                                    + "The West Midlands pack should contain Crayford Road.";
+                                    + "Use SETUP > Offline data status to confirm your regional index is installed.";
                             new AlertDialog.Builder(this).setTitle("Offline address search")
                                 .setMessage(details)
                                 .setPositiveButton("SETUP",(setupDialog,buttonIndex)->openSetup())
@@ -599,7 +599,22 @@ public final class MapActivity extends Activity {
             main.post(()->{
                 if(isFinishing()||isDestroyed())return;
                 if(results.isEmpty()){
-                    status.setText("No local street/address matches. Try a postcode or another search");
+                    uk.co.eaton.drive.address.AddressQuery.Parts parts =
+                        uk.co.eaton.drive.address.AddressQuery.parse(query);
+                    String problem=addressStore.lastSearchError();
+                    String detail=(problem!=null&&!problem.isEmpty())
+                        ? "Offline search error: "+problem+"\n\nCheck the regional index in SETUP."
+                        : "No results for \""+query+"\" in the installed regional index. "
+                            + "The map may not contain every house number. "
+                            + "Try the street name without the number, or use a postcode.";
+                    AlertDialog.Builder dialog=new AlertDialog.Builder(this)
+                        .setTitle("Address not found").setMessage(detail);
+                    if(parts.hasHouse())
+                        dialog.setPositiveButton("SEARCH STREET",
+                            (d,w)->findDestination(parts.street));
+                    else dialog.setPositiveButton("OK",null);
+                    dialog.setNegativeButton("Close",null).show();
+                    status.setText("No matching offline address");
                     return;
                 }
                 String[] labels=new String[results.size()];
