@@ -25,6 +25,14 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
+import android.content.res.ColorStateList;
+import android.graphics.Typeface;
+import uk.co.eaton.drive.saved.SavedPlaces;
 import android.os.Handler;
 import android.os.Looper;
 
@@ -90,6 +98,8 @@ public final class MapActivity extends Activity {
     private EmbeddedRouter routing;
     private PostcodeStore postcodes;
     private AddressStore addressStore;
+    private SavedPlaces savedPlaces;
+    private String destinationLabel="Map location";
     private NavigationService navigationService;
     private boolean navBound, navigationActive, screenVisible;
     private final NavigationService.Observer serviceObserver = this::onNavigationState;
@@ -128,6 +138,7 @@ public final class MapActivity extends Activity {
         routing = new EmbeddedRouter(this);
         postcodes = new PostcodeStore(this);
         addressStore = new AddressStore(this);
+        savedPlaces = new SavedPlaces(this);
         loadInstalledMaps();
         prepareBuiltInPostcodes();
     }
@@ -153,28 +164,41 @@ public final class MapActivity extends Activity {
         outer.addView(placeholder, placeholderLp);
 
         LinearLayout toolbar = DriveUi.column(this);
-        toolbar.setBackgroundColor(DriveUi.BG);
+        toolbar.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+            new int[]{0xff091d33,0xff061321}));
         DriveUi.pad(this, toolbar, 5, 2);
         LinearLayout row1 = DriveUi.row(this);
         LinearLayout row2 = DriveUi.row(this);
         toolbar.addView(row1, new LinearLayout.LayoutParams(-1, DriveUi.dp(this, 43)));
         toolbar.addView(row2, new LinearLayout.LayoutParams(-1, DriveUi.dp(this, 43)));
         addButton(row1, "‹ BACK", this::finish);
-        TextView title = DriveUi.text(this, "EATON  /  NAVIGATION", 17, DriveUi.TEXT, true);
+        TextView title = DriveUi.text(this, "EATON  DRIVE  /  NAVIGATION", 16, DriveUi.TEXT, true);
+        title.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
+        title.setLetterSpacing(0.09f);
+        SpannableString branded=new SpannableString("EATON  DRIVE  /  NAVIGATION");
+        branded.setSpan(new ForegroundColorSpan(DriveUi.TEAL),7,12,Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        title.setText(branded);
         title.setGravity(Gravity.CENTER);
+        title.setSingleLine(true);
+        title.setEllipsize(android.text.TextUtils.TruncateAt.END);
         row1.addView(title, DriveUi.weighted(0, -1, 1f));
         addButton(row1, "GPS", this::centreOnGps);
         addButton(row1, "MUTE / VOICE", this::toggleVoice);
         addButton(row1, "OPTIONS", this::showRouteOptions);
         addButton(row1, "SETUP", this::openSetup);
-        destinationSearch = DriveUi.text(this, "⌕  WHERE TO?  •  POSTCODE, STREET OR ADDRESS", 17, DriveUi.TEXT, true);
+        destinationSearch = DriveUi.text(this, "⌕  WHERE TO?  •  POSTCODE / ADDRESS", 16, DriveUi.TEXT, true);
         destinationSearch.setGravity(Gravity.CENTER_VERTICAL);
-        destinationSearch.setBackground(DriveUi.bg(this,DriveUi.PANEL2,12,true));
+        destinationSearch.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+            new int[]{0xff153954,0xff092138}));
+        destinationSearch.setSingleLine(true);
+        destinationSearch.setEllipsize(android.text.TextUtils.TruncateAt.END);
         destinationSearch.setPadding(DriveUi.dp(this,15),0,DriveUi.dp(this,10),0);
         LinearLayout.LayoutParams searchLp=new LinearLayout.LayoutParams(0,-1,1f);
         searchLp.setMargins(DriveUi.dp(this,4),DriveUi.dp(this,3),DriveUi.dp(this,4),DriveUi.dp(this,3));
         row2.addView(destinationSearch,searchLp);
         destinationSearch.setOnClickListener(v->openDestinationSearch());
+        addButton(row2, "HOME", this::selectHome);
+        addButton(row2, "SAVED", this::showSavedPlaces);
         pinButton = addButton(row2, "PIN", this::selectMapCentre);
         addButton(row2, "PLAN", () -> calculateRoute(false));
         addButton(row2, "ROUTES", this::chooseAlternative);
@@ -217,7 +241,8 @@ public final class MapActivity extends Activity {
 
         LinearLayout footer = DriveUi.row(this);
         footer.setGravity(Gravity.CENTER_VERTICAL);
-        footer.setBackgroundColor(DriveUi.BG);
+        footer.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+            new int[]{0xff091b30,0xff05101e}));
         DriveUi.pad(this, footer, 16, 5);
         status = DriveUi.text(this, "", 12, DriveUi.MUTED, false);
         footer.addView(status, DriveUi.weighted(0, -1, 1f));
@@ -228,8 +253,14 @@ public final class MapActivity extends Activity {
     private TextView addButton(LinearLayout row, String label, Runnable action) {
         TextView button = DriveUi.text(this, label, 12, DriveUi.TEAL, true);
         button.setGravity(Gravity.CENTER);
-        button.setBackground(DriveUi.bg(this, DriveUi.PANEL2, 10, true));
+        GradientDrawable surface=new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+            new int[]{0xff153551,0xff0a2035});
+        surface.setCornerRadius(DriveUi.dp(this,9));
+        surface.setStroke(DriveUi.dp(this,1),0xff286b84);
+        button.setBackground(new RippleDrawable(ColorStateList.valueOf(0x4435e4d6),surface,null));
+        button.setContentDescription(label);
         button.setPadding(DriveUi.dp(this, 7), 0, DriveUi.dp(this, 7), 0);
+        button.setMinHeight(DriveUi.dp(this,36));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -1);
         lp.setMargins(DriveUi.dp(this, 3), DriveUi.dp(this, 3), DriveUi.dp(this, 3), DriveUi.dp(this, 3));
         row.addView(button, lp);
@@ -401,6 +432,148 @@ public final class MapActivity extends Activity {
             });
         });
     }
+    /** Compact toolbar shortcut: one tap selects a saved Home without hiding the map. */
+    private void selectHome() {
+        if(navigationActive){status.setText("Stop navigation before changing destination");return;}
+        SavedPlaces.Place home=savedPlaces.home();
+        if(home!=null){useSavedPlace(home);return;}
+        AlertDialog.Builder setup=new AlertDialog.Builder(this).setTitle("Set Home")
+            .setMessage(destination==null
+                ? "Choose your Home using WHERE TO? or the PIN first. Then tap HOME again to save it."
+                : "Save your current selected destination as Home? You can change it later in SAVED.")
+            .setNegativeButton("Cancel",null);
+        if(destination!=null)
+            setup.setPositiveButton("SAVE HOME",(d,w)->saveHomeFromSelection());
+        else setup.setPositiveButton("WHERE TO?",(d,w)->openDestinationSearch());
+        setup.show();
+    }
+    private void saveHomeFromSelection() {
+        if(destination==null||navigationActive){
+            status.setText("Choose a destination first");return;
+        }
+        askPlaceName("Name your Home",destinationLabel, name->{
+            boolean saved=savedPlaces.setHome(
+                new SavedPlaces.Place(name,destination.lat,destination.lon));
+            status.setText(saved?"Home saved offline":"Could not save Home");
+        });
+    }
+    private interface PlaceNameCallback {void onName(String name);}
+    private void askPlaceName(String title,String suggestion,PlaceNameCallback done) {
+        EditText input=new EditText(this);
+        input.setSingleLine(true);
+        input.setText(suggestion==null?"":suggestion);
+        input.setSelectAllOnFocus(true);
+        new AlertDialog.Builder(this).setTitle(title)
+            .setView(input)
+            .setPositiveButton("SAVE",(d,w)->{
+                try{done.onName(SavedPlaces.cleanName(input.getText().toString()));}
+                catch(IllegalArgumentException problem){
+                    status.setText("Enter a name to save this destination");
+                    Toast.makeText(this,"Enter a name for the place",Toast.LENGTH_LONG).show();
+                }
+            }).setNegativeButton("Cancel",null).show();
+    }
+    private void useSavedPlace(SavedPlaces.Place place) {
+        if(navigationActive){status.setText("Stop navigation before selecting another destination");return;}
+        setDestination(new RouteParser.Point(place.lat,place.lon));
+        destinationLabel=place.name;
+        destinationSearch.setText("⌕  "+place.name);
+        if(mapReady){
+            mapView.setCenter(new LatLong(place.lat,place.lon));
+            mapView.setZoomLevel((byte)16);
+        }
+        status.setText(place.name+" selected • Tap PLAN for a route");
+    }
+    private void showSavedPlaces() {
+        if(navigationActive){status.setText("Stop guidance before choosing a saved destination");return;}
+        List<SavedPlaces.Place> favorites=savedPlaces.favourites();
+        SavedPlaces.Place home=savedPlaces.home();
+        int offset=home==null?0:1;
+        String[] labels=new String[favorites.size()+offset];
+        if(home!=null)labels[0]="⌂ HOME  •  "+home.name;
+        for(int i=0;i<favorites.size();i++)
+            labels[i+offset]="★ "+favorites.get(i).name;
+        AlertDialog.Builder menu=new AlertDialog.Builder(this)
+            .setTitle("Saved destinations")
+            .setMessage(labels.length==0?"No places saved yet. Select a destination first, then save it here.":null)
+            .setItems(labels,(d,index)->{
+                if(home!=null&&index==0)useSavedPlace(home);
+                else useSavedPlace(favorites.get(index-offset));
+            })
+            .setNegativeButton("Close",null)
+            .setPositiveButton("MANAGE",(d,w)->manageSavedPlaces());
+        if(destination!=null)menu.setNeutralButton("SAVE CURRENT",(d,w)->saveCurrentFavourite());
+        menu.show();
+    }
+    private void saveCurrentFavourite() {
+        if(destination==null||navigationActive){
+            status.setText("Select a destination before saving it");return;
+        }
+        final RouteParser.Point chosen=destination;
+        askPlaceName("Save favourite",destinationLabel,name->{
+            boolean saved=savedPlaces.addFavourite(new SavedPlaces.Place(name,chosen.lat,chosen.lon));
+            status.setText(saved?"Saved offline: "+name:
+                "Couldn't save: duplicate location or 24 favourites already stored");
+        });
+    }
+    private void manageSavedPlaces() {
+        List<SavedPlaces.Place> list=savedPlaces.favourites();
+        SavedPlaces.Place home=savedPlaces.home();
+        int offset=home==null?0:1;
+        String[] labels=new String[list.size()+offset];
+        if(home!=null)labels[0]="⌂ Home — "+home.name;
+        for(int i=0;i<list.size();i++)labels[i+offset]="★ "+list.get(i).name;
+        if(labels.length==0) {
+            new AlertDialog.Builder(this).setTitle("Saved destinations")
+                .setMessage("Nothing saved yet. Choose a destination using WHERE TO? or PIN first.")
+                .setPositiveButton("OK",null).show();
+            return;
+        }
+        new AlertDialog.Builder(this).setTitle("Manage saved places")
+            .setItems(labels,(dialog,index)->{
+                if(home!=null&&index==0)manageHome();
+                else manageFavourite(index-offset,list.get(index-offset));
+            })
+            .setNegativeButton("Back",(d,w)->showSavedPlaces()).show();
+    }
+    private void manageHome() {
+        SavedPlaces.Place home=savedPlaces.home();
+        if(home==null)return;
+        new AlertDialog.Builder(this).setTitle("Home • "+home.name)
+            .setItems(new String[]{"Select as destination","Rename Home","Clear saved Home"},
+                (d,index)->{
+                    if(index==0)useSavedPlace(home);
+                    if(index==1)askPlaceName("Rename Home",home.name,
+                        name->{savedPlaces.setHome(new SavedPlaces.Place(name,home.lat,home.lon));
+                            status.setText("Home renamed");});
+                    if(index==2)new AlertDialog.Builder(this).setTitle("Remove Home?")
+                        .setMessage("Remove this saved Home location? Map and routing data won't be affected.")
+                        .setPositiveButton("REMOVE",(confirm,which)->{
+                            savedPlaces.clearHome();status.setText("Saved Home cleared");})
+                        .setNegativeButton("Cancel",null).show();
+                }).setNegativeButton("Cancel",null).show();
+    }
+    private void manageFavourite(int index,SavedPlaces.Place place){
+        new AlertDialog.Builder(this).setTitle(place.name)
+            .setItems(new String[]{"Select as destination","Make this Home","Rename","Delete"},
+                (d,action)->{
+                    if(action==0)useSavedPlace(place);
+                    if(action==1){
+                        savedPlaces.setHome(new SavedPlaces.Place(place.name,place.lat,place.lon));
+                        status.setText("Saved "+place.name+" as Home");
+                    }
+                    if(action==2)askPlaceName("Rename favourite",place.name,
+                        name->{savedPlaces.renameFavourite(index,name);
+                            status.setText("Favourite renamed");});
+                    if(action==3)new AlertDialog.Builder(this)
+                        .setTitle("Delete "+place.name+"?")
+                        .setMessage("This removes only the saved shortcut, not any maps or road data.")
+                        .setPositiveButton("DELETE",(confirm,which)->{
+                            savedPlaces.deleteFavourite(index);
+                            status.setText("Favourite deleted");
+                        }).setNegativeButton("Cancel",null).show();
+                }).setNegativeButton("Cancel",null).show();
+    }
     private void openSetup() {
         String[] choices = {"Import map regions","Import driving roads",
             "Import street/address search index","Offline data status"};
@@ -538,6 +711,8 @@ public final class MapActivity extends Activity {
                             .setItems(labels,(a,index) -> {
                                 AddressStore.Result selected=found.get(index);
                                 setDestination(selected.point);
+                                destinationLabel=selected.label;
+                                destinationSearch.setText("⌕  "+selected.label);
                                 mapView.setCenter(new LatLong(selected.point.lat,selected.point.lon));
                                 mapView.setZoomLevel((byte)16);
                                 status.setText("Selected "+selected.label+" • tap PLAN");
@@ -578,7 +753,8 @@ public final class MapActivity extends Activity {
                         mapView.setCenter(new LatLong(found.lat,found.lon));
                         mapView.setZoomLevel((byte)15);
                     }
-                    destinationSearch.setText("⌕  "+query.toUpperCase(Locale.UK));
+                    destinationLabel=query.toUpperCase(Locale.UK);
+                    destinationSearch.setText("⌕  "+destinationLabel);
                     status.setText("Postcode selected — tap PLAN");
                 });
             });
@@ -636,6 +812,7 @@ public final class MapActivity extends Activity {
                             mapView.setCenter(new LatLong(result.point.lat,result.point.lon));
                             mapView.setZoomLevel((byte)16);
                         }
+                        destinationLabel=result.label;
                         destinationSearch.setText("⌕  "+result.label);
                         status.setText("Destination selected — tap PLAN");
                     }).setNegativeButton("Cancel",null).show();
@@ -692,6 +869,8 @@ public final class MapActivity extends Activity {
                     return;
                 }
                 setDestination(found);
+                destinationLabel=input.getText().toString().trim().toUpperCase(Locale.UK);
+                destinationSearch.setText("⌕  "+destinationLabel);
                 if (mapReady) {
                     mapView.setCenter(new LatLong(found.lat,found.lon));
                     mapView.setZoomLevel((byte) 15);
@@ -798,6 +977,7 @@ public final class MapActivity extends Activity {
     }
     private void selectMapCentre() {
         if (!mapReady) { Toast.makeText(this,"Import a map first",Toast.LENGTH_SHORT).show(); return; }
+        if(navigationActive){status.setText("Stop active guidance to select a new location");return;}
         if (!choosingPin) {
             choosingPin = true;
             userMovedMap = true;
@@ -808,6 +988,8 @@ public final class MapActivity extends Activity {
         }
         LatLong centre = mapView.getModel().mapViewPosition.getCenter();
         setDestination(new RouteParser.Point(centre.latitude, centre.longitude));
+        destinationLabel="Pinned map location";
+        destinationSearch.setText("⌕  Pinned map location");
         choosingPin = false;
         centrePin.setVisibility(View.GONE);
         pinButton.setText("PIN");
@@ -819,6 +1001,7 @@ public final class MapActivity extends Activity {
             return;
         }
         destination = point;
+        destinationLabel="Map location";
         stopped = false;
         plannedRoute = null; primaryRoute = null; alternativeRoute = null;
         selectedAlternative = false; navigation = null;
@@ -1044,7 +1227,8 @@ public final class MapActivity extends Activity {
         centrePin.setVisibility(View.GONE);
         pinButton.setText("PIN");
         destination=null;
-        destinationSearch.setText("⌕  WHERE TO?  •  POSTCODE, STREET OR ADDRESS");
+        destinationLabel="Map location";
+        destinationSearch.setText("⌕  WHERE TO?  •  POSTCODE / ADDRESS");
         removeRouteOverlay();
         if(destinationOverlay!=null){
             mapView.getLayerManager().getLayers().remove(destinationOverlay);
