@@ -43,13 +43,19 @@ public final class AddressStore {
     private boolean valid(File file) {
         if (!file.isFile() || file.length() < 65536) return false;
         try (SQLiteDatabase db = SQLiteDatabase.openDatabase(file.getAbsolutePath(),null,SQLiteDatabase.OPEN_READONLY)) {
-            if (db.getVersion() != 1) return false;
+            if (db.getVersion() < 1 || db.getVersion() > 2) return false;
             try (Cursor c = db.rawQuery("SELECT name,lat,lon FROM locations LIMIT 1",null)) {
                 return c.moveToFirst();
             }
         } catch (Exception ignored) { return false; }
     }
     public boolean installed() { return valid(database()); }
+    public boolean hasDetailedAreaLabels() {
+        if (!installed()) return false;
+        try (SQLiteDatabase db=SQLiteDatabase.openDatabase(database().getAbsolutePath(),null,SQLiteDatabase.OPEN_READONLY)) {
+            return db.getVersion()>=2;
+        } catch (RuntimeException ignored) { return false; }
+    }
     public String importIndex(Uri source) throws IOException {
         File target = database();
         File dir = target.getParentFile();
@@ -93,9 +99,12 @@ public final class AddressStore {
         String match = AddressQuery.matchExpression(text);
         if (match.isEmpty()) return results;
         try (SQLiteDatabase db = SQLiteDatabase.openDatabase(database().getAbsolutePath(),null,SQLiteDatabase.OPEN_READONLY)) {
+            // v2 includes locally computed neighbourhood and postcode district.
+            boolean rich = db.getVersion() >= 2;
+            String columns = rich ? "name,house,place,lat,lon,locality,district" : "name,house,place,lat,lon";
             // First use the indexed lookup, which is fast for 400,000+ records.
             try {
-                String sql = "SELECT name,house,place,lat,lon FROM locations WHERE locations MATCH ? ";
+                String sql = "SELECT " + columns + " FROM locations WHERE locations MATCH ? ";
                 String[] args;
                 if (near != null) {
                     sql += "ORDER BY ((CAST(lat AS REAL)-?)*(CAST(lat AS REAL)-?)"
@@ -118,7 +127,7 @@ public final class AddressStore {
             if (results.isEmpty()) {
                 String street = text == null ? "" : text.trim();
                 if (street.length() > 1 && street.length() < 120) {
-                    String sql = "SELECT name,house,place,lat,lon FROM locations"
+                    String sql = "SELECT " + columns + " FROM locations"
                         + " WHERE LOWER(name) LIKE ? ESCAPE '\\' LIMIT 40";
                     String safe = street.toLowerCase(Locale.UK)
                         .replace("\\","\\\\").replace("%","\\%").replace("_","\\_");
@@ -141,7 +150,19 @@ public final class AddressStore {
             String road = c.getString(0), house = c.getString(1), place = c.getString(2);
             if (road == null || road.trim().isEmpty()) continue;
             String label = ((house == null || house.isEmpty()) ? "" : house + " ") + road;
-            if (place != null && !place.isEmpty()) label += ", " + place;
+            String locality = c.getColumnCount() > 5 ? c.getString(5) : "";
+            String district = c.getColumnCount() > 6 ? c.getString(6) : "";
+            if (locality != null && !locality.isEmpty() && !locality.equalsIgnoreCase(road))
+                label += ", " + locality;
+            else if (place != null && !place.isEmpty() && !place.equalsIgnoreCase(road))
+                label += ", " + place;
+            if (district != null && !district.isEmpty()) label += ", " + district;
+            // The index has many nearby segments of the same street; display each
+            // distinct location label once. FTS results are already distance-sorted.
+            boolean duplicate = false;
+            for (Result prior : results)
+                if (prior.label.equalsIgnoreCase(label)) {duplicate = true; break;}
+            if (duplicate) continue;
             try { results.add(new Result(label,c.getDouble(3),c.getDouble(4))); }
             catch (IllegalArgumentException ignored) { }
         }
