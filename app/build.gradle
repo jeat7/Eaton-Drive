@@ -15,8 +15,8 @@ android {
         applicationId 'uk.co.eaton.drive'
         minSdk 23
         targetSdk 32
-        versionCode signedRunNumber ? 200000 + Integer.parseInt(signedRunNumber) : 18
-        versionName '0.9.3'
+        versionCode signedRunNumber ? 200000 + Integer.parseInt(signedRunNumber) : 19
+        versionName '0.10.0'
     }
     signingConfigs {
         permanentRelease {

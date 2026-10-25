@@ -1,4 +1,4 @@
-# Eaton Drive v0.9.3 — improved unmapped-house navigation fallbacks
+# Eaton Drive v0.10.0 — Signature dashboard visual refresh
 
 A native Java Android launcher and experimental offline sat-nav for the 2015–2018 Suzuki Celerio's third-party Rimoodly head unit, advertised as Android 11, 1024×600, 1GB RAM, 16GB storage.
 
@@ -66,3 +66,14 @@ Navigation is foreground-only and stops GPS when MapActivity loses focus; it doe
 - When exact address search returns no matching house, the destination-first search now offers **FIND STREET** or **USE POSTCODE**. For the latter, an explicit notice says that the postcode centre is approximate and not the verified entrance. It never presents a road centre or interpolated house as a confirmed building location.
 - Existing map, postcode, address and route packs remain compatible; no data-file changes are required after an in-place update. Prior debug builds may still need uninstall due to temporary signing keys.
 - Suggested next milestones: better offline address coverage and saved favourites/Home, followed by continued real-device GPS, spoken turn and foreground service validation.
+
+
+## v0.10.0 — Eaton Drive Signature launcher
+- Matches the user-approved **EATON DRIVE** wordmark: spaced white EATON and luminous teal DRIVE. **No redundant E logo** next to the name. System apps-grid control remains on the opposite side of the top bar.
+- Main dashboard now follows the 1024×600 premium automotive design: GPS instrument/speed panel on the left; a large teal outlined NAVIGATION tile on the right; and a three-column RADIO / MUSIC / PHONE row.
+- A small **transparent light-blue Suzuki Celerio side-profile WebP** (original design generated for Eaton Drive) is shown inside the speed panel. It is a static, approximately 5.6KB image asset, not a video, animated sprite or expensive blur overlay. The car artwork is a visual illustration, not an official Suzuki logo.
+- Compact, antialiased Canvas-drawn icons (navigation arrow, radio, music, phone, apps grid) are bundled as native code. No custom font file, network requests, WebView, live animations or extra heavyweight dependencies are needed.
+- Accurate GPS continues to show live MPH. In the absence of a trustworthy fix, the speed display is a dash instead of a false 0 MPH and the GPS status indicates searching.
+- Toolbar apps-grid opens other installed Android apps; SETTINGS provides app assignment and Android settings. Long-pressing RADIO/MUSIC/PHONE still allows selecting the appropriate OEM app for each tile.
+- Native navigation screen, BRouter engine, postcodes, address index, road tiles and all offline files are unchanged.
+- **Known limitation:** visual layout is CI-tested but still needs installation and visual inspection on the exact head unit. OEM app launch behaviour and navigation features are unvalidated in a moving vehicle. Do not use for sole driving guidance.
