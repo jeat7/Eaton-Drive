@@ -394,6 +394,7 @@ public final class MainActivity extends Activity {
                 "Default home launcher: "+launcherStatus,
                 "Floating Home for Radio/Music: "+overlayStatus,
                 "Test floating Home shortcut",
+                "Floating Home diagnostics",
                 "Assign FM radio application",
                 "Assign music application",
                 "Assign Bluetooth phone application",
@@ -404,11 +405,12 @@ public final class MainActivity extends Activity {
                     case 0:requestDefaultHome();break;
                     case 1:toggleOverlay();break;
                     case 2:testOverlay();break;
-                    case 3:chooseApp("radio");break;
-                    case 4:chooseApp("music");break;
-                    case 5:chooseApp("phone");break;
-                    case 6:showDeviceDetails();break;
-                    case 7:
+                    case 3:showOverlayDiagnostics();break;
+                    case 4:chooseApp("radio");break;
+                    case 5:chooseApp("music");break;
+                    case 6:chooseApp("phone");break;
+                    case 7:showDeviceDetails();break;
+                    case 8:
                         try{startActivity(new Intent(Settings.ACTION_SETTINGS));}
                         catch(RuntimeException ex){Toast.makeText(this,
                             "Android Settings unavailable",Toast.LENGTH_LONG).show();}
@@ -521,6 +523,27 @@ public final class MainActivity extends Activity {
                 Toast.LENGTH_LONG).show();
         }
     }
+    private void showOverlayDiagnostics(){
+        new AlertDialog.Builder(this)
+            .setTitle("Floating Home diagnostics")
+            .setMessage(FloatingHomeService.diagnostics(this)
+                +"\n\nUse TEST to show the button on this screen. Open Music and "
+                +"check whether it remains visible after the phone rotates. "
+                +"If the last service state is Start failed, the error above "
+                +"may identify an Android or manufacturer restriction.")
+            .setPositiveButton("TEST",(dialog,which)->testOverlay())
+            .setNeutralButton("OVERLAY SETTINGS",(dialog,which)->{
+                try{
+                    Intent manage=new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION);
+                    if(Build.VERSION.SDK_INT<30)
+                        manage.setData(Uri.parse("package:"+getPackageName()));
+                    startActivity(manage);
+                }catch(RuntimeException ignored){
+                    Toast.makeText(this,"Overlay settings unavailable",Toast.LENGTH_LONG).show();
+                }
+            })
+            .setNegativeButton("Close",null).show();
+    }
     private void showDeviceDetails(){
         android.util.DisplayMetrics display=getResources().getDisplayMetrics();
         ActivityManager activity=(ActivityManager)getSystemService(ACTIVITY_SERVICE);
@@ -539,6 +562,9 @@ public final class MainActivity extends Activity {
             +"\\nApprox. total RAM: "+ram
             +"\\nDefault Home: "+(isDefaultHome()?"Eaton Drive":"Other / not selected")
             +"\\nFloating Home permission: "+(FloatingHomeService.permitted(this)?"Granted":"Not granted")
+            +"\\nOverlay state: "+
+                getSharedPreferences(FloatingHomeService.PREFS,MODE_PRIVATE)
+                    .getString(FloatingHomeService.LAST_STATUS,"Not started")
             +"\\n\\nMCU version and chipset are not available through standard Android APIs. "
             +"For tomorrow's car check, photograph the stereo's Settings → About device "
             +"and MCU/system information.";
