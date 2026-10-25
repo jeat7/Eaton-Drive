@@ -10,6 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Verify selected transparent Celerio dashboard artwork
+        run: |
+          echo "945fa6827d90bea3f57d995ff67ecc47bc6422310584fb6962f9ed938bffe5cc  app/src/main/res/drawable-nodpi/celerio_side.webp" | sha256sum -c -
       - name: Fetch MIT-licensed BRouter routing core (pinned v1.7.10)
         uses: actions/checkout@v4
         with:
