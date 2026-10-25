@@ -69,14 +69,27 @@ public final class AddressStore {
             if (temp.exists()) temp.delete();
         }
     }
-    public List<Result> search(String text) {
+    public List<Result> search(String text) { return search(text,null); }
+    public List<Result> search(String text, RouteParser.Point near) {
         List<Result> results = new ArrayList<>();
         if (!installed()) return results;
         String match = AddressQuery.matchExpression(text);
         if (match.isEmpty()) return results;
+        String sql = "SELECT name,house,place,lat,lon FROM locations WHERE locations MATCH ? ";
+        String[] args;
+        if (near != null) {
+            // Sort matching results by approximate squared distance before limiting.
+            // This is especially important for common street names like High Street.
+            sql += "ORDER BY ((CAST(lat AS REAL)-?)*(CAST(lat AS REAL)-?)"
+                + "+0.37*(CAST(lon AS REAL)-?)*(CAST(lon AS REAL)-?)) LIMIT 40";
+            args = new String[]{match,Double.toString(near.lat),Double.toString(near.lat),
+                Double.toString(near.lon),Double.toString(near.lon)};
+        } else {
+            sql += "LIMIT 40";
+            args = new String[]{match};
+        }
         try (SQLiteDatabase db = SQLiteDatabase.openDatabase(database().getAbsolutePath(),null,SQLiteDatabase.OPEN_READONLY);
-             Cursor c = db.rawQuery("SELECT name,house,place,lat,lon FROM locations WHERE locations MATCH ? LIMIT 40",
-                 new String[]{match})) {
+             Cursor c = db.rawQuery(sql,args)) {
             while (c.moveToNext()) {
                 String road=c.getString(0),house=c.getString(1),place=c.getString(2);
                 if (road == null || road.trim().isEmpty()) continue;

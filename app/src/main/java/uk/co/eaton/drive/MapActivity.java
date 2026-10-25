@@ -438,7 +438,9 @@ public final class MapActivity extends Activity {
                 String query=text.getText().toString();
                 status.setText("Searching offline streets and addresses...");
                 io.execute(() -> {
-                    List<AddressStore.Result> found=addressStore.search(query);
+                    RouteParser.Point near = lastFix == null ? null
+                        : new RouteParser.Point(lastFix.getLatitude(),lastFix.getLongitude());
+                    List<AddressStore.Result> found=addressStore.search(query,near);
                     main.post(() -> {
                         if (isFinishing()||isDestroyed()) return;
                         if (found.isEmpty()) {
