@@ -297,7 +297,10 @@ public final class MapActivity extends Activity {
                 : "The built-in postcode database is unavailable. Check storage and reinstall the current APK."))
             + "\n\nYour offline map files remain saved between launches."
             + "\nMap regions are rendered as needed near the screen position."
-            + "\n\nStreet and house-number search: " + (addressStore.installed() ? "regional index installed." : "requires a regional index in SETUP.")
+            + "\n\nStreet and house-number index: "
+            + (addressStore.installed()
+                ? String.format(Locale.UK, "%,d searchable records installed.", addressStore.recordCount())
+                : "NOT INSTALLED — choose SETUP > Import street/address search index.")
             + "\nPostcode data: Postcodes UK, September 2026. GB only. Offline map © OpenStreetMap contributors.";
         new AlertDialog.Builder(this).setTitle("Offline data")
             .setMessage(message).setPositiveButton("OK", null).show();
@@ -444,11 +447,19 @@ public final class MapActivity extends Activity {
                     main.post(() -> {
                         if (isFinishing()||isDestroyed()) return;
                         if (found.isEmpty()) {
-                            new AlertDialog.Builder(this).setTitle("No offline matches")
-                                .setMessage("No mapped results for this search in the installed region. "
-                                    + "Try a street name without the house number, or use POSTCODE.")
-                                .setPositiveButton("OK",null).show();
-                            status.setText("No address matches"); return;
+                            String problem=addressStore.lastSearchError();
+                            String details=(problem!=null && !problem.isEmpty())
+                                ? "Search database error: " + problem
+                                    + "\n\nTry reinstalling the offline address index in SETUP."
+                                : "No mapped results for this query. Try the street name only, "
+                                    + "or verify the index under SETUP > Offline data status. "
+                                    + "The West Midlands pack should contain Crayford Road.";
+                            new AlertDialog.Builder(this).setTitle("Offline address search")
+                                .setMessage(details)
+                                .setPositiveButton("SETUP",(d,w)->openSetup())
+                                .setNegativeButton("Close",null).show();
+                            status.setText(problem!=null && !problem.isEmpty()
+                                ? "Address search error: " + problem : "No address matches"); return;
                         }
                         String[] labels=new String[found.size()];
                         for(int i=0;i<labels.length;i++)labels[i]=found.get(i).label;
