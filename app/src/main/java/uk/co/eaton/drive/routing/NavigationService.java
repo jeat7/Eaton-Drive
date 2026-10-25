@@ -57,6 +57,7 @@ public final class NavigationService extends Service {
     private boolean active, rerouting;
     private boolean hasStartedForeground;
     private long lastNotification;
+    private long lastProcessedFixNanos;
     private String instruction="Preparing navigation",message="Waiting for GPS";
 
     public static Intent startIntent(Context context){
@@ -111,6 +112,7 @@ public final class NavigationService extends Service {
             RouteStorage.Saved saved=RouteStorage.load(this);
             route=saved.route;options=saved.options;
             session=new NavigationSession(route);
+            lastFix=null;lastProcessedFixNanos=0;
             active=true;rerouting=false;
             instruction=route.turns.isEmpty()?
                 "Follow highlighted route — voice turns unavailable":"Continue along route";
@@ -137,6 +139,13 @@ public final class NavigationService extends Service {
             return;
         }
         lastFix=fix;
+        // GpsTracker also republishes its last fix on a watchdog timer. Only process
+        // genuinely new GPS fixes for turn announcement and off-route thresholds.
+        if(fix.getElapsedRealtimeNanos()==lastProcessedFixNanos){
+            notifyObserver();
+            return;
+        }
+        lastProcessedFixNanos=fix.getElapsedRealtimeNanos();
         if(rerouting){message="Recalculating offline route";notifyObserver();return;}
         NavigationSession.Update result=session.locate(
             new RouteParser.Point(fix.getLatitude(),fix.getLongitude()),
