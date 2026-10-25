@@ -114,8 +114,8 @@ public final class EmbeddedRouter {
                 rc.turnInstructionMode = 3;  // OsmAnd GPX turn annotations for our voice parser
                 // Profile variables are parsed by BRouter and respected during routing.
                 Map<String,String> settings = new HashMap<>();
-                settings.put("avoid_motorways", Boolean.toString(options.avoidMotorways));
-                settings.put("avoid_toll", Boolean.toString(options.avoidTolls));
+                settings.put("avoid_motorways", options.avoidMotorways ? "1" : "0");
+                settings.put("avoid_toll", options.avoidTolls ? "1" : "0");
                 rc.keyValues = settings;
                 rc.setAlternativeIdx(options.alternativeIndex);
                 rc.outputFormat = "gpx";
