@@ -606,7 +606,7 @@ public final class MapActivity extends Activity {
                     String detail=hasProblem
                         ? "Offline address search error: "+problem+"\n\nCheck SETUP for the installed regional index."
                         : "House numbers are not available for every road in the offline OpenStreetMap index. "
-                            + "We cannot reliably locate \\""+query+"\\" to a front door. "
+                            + "We cannot reliably locate "+query+" to a front door. "
                             + "You can select the approximate street position or enter a full postcode.";
                     AlertDialog.Builder dialog=new AlertDialog.Builder(this)
                         .setTitle(hasProblem?"Address search error":"Exact address not mapped")
@@ -650,7 +650,7 @@ public final class MapActivity extends Activity {
         input.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS);
         new AlertDialog.Builder(this)
             .setTitle("Use a postcode instead")
-            .setMessage("The house \\""+originalSearch+"\\" isn't mapped. "
+            .setMessage("The house "+originalSearch+" isn't mapped. "
                 + "Enter its known full postcode. This chooses an approximate postcode location, "
                 + "not a verified front door or vehicle entrance.")
             .setView(input)
