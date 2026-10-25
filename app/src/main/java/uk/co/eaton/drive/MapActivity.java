@@ -91,6 +91,7 @@ public final class MapActivity extends Activity {
     private boolean autoCentredOnGps;
     private boolean userMovedMap;
     private boolean preparingPostcodes;
+    private int carSizeDp = 72;
     private RouteParser.Point destination;
     private Polyline routeOverlay;
     private FixedPixelCircle destinationOverlay;
@@ -100,6 +101,7 @@ public final class MapActivity extends Activity {
         super.onCreate(state);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON | WindowManager.LayoutParams.FLAG_FULLSCREEN);
         AndroidGraphicFactory.createInstance(getApplication());
+        carSizeDp = Math.max(36, Math.min(120, getPreferences(0).getInt("car_marker_dp",72)));
         buildScreen();
         gps = new GpsTracker(this, this::onGps);
         routing = new EmbeddedRouter(this);
@@ -172,7 +174,7 @@ public final class MapActivity extends Activity {
         routeInfo.setVisibility(View.GONE);
         carMarker = new CarMarkerView(this);
         FrameLayout.LayoutParams carParams = new FrameLayout.LayoutParams(
-            DriveUi.dp(this,72),DriveUi.dp(this,72),Gravity.CENTER);
+            DriveUi.dp(this,carSizeDp),DriveUi.dp(this,carSizeDp),Gravity.CENTER);
         outer.addView(carMarker,carParams);
 
         LinearLayout footer = DriveUi.row(this);
@@ -393,6 +395,31 @@ public final class MapActivity extends Activity {
                     routeInfo.setVisibility(View.GONE);
                     status.setText("Preferences saved • Tap PLAN to recalculate");
                 }
+            }).setNeutralButton("CAR SIZE",(dialog,which)->chooseCarSize())
+              .setNegativeButton("Cancel",null).show();
+    }
+    private void chooseCarSize() {
+        // Physical dp dimensions, persisted separately from route restrictions.
+        final int[] sizes = {40,56,72,88,104,120};
+        String[] labels = {"Extra small — 40dp","Small — 56dp","Normal — 72dp",
+            "Large — 88dp","Extra large — 104dp","Maximum — 120dp"};
+        int checked = 2;
+        int closest = Integer.MAX_VALUE;
+        for (int i=0; i<sizes.length; i++) {
+            int diff = Math.abs(sizes[i]-carSizeDp);
+            if (diff<closest) { closest=diff; checked=i; }
+        }
+        new AlertDialog.Builder(this).setTitle("Car marker size")
+            .setSingleChoiceItems(labels, checked, (dialog, index) -> {
+                carSizeDp=sizes[index];
+                getPreferences(0).edit().putInt("car_marker_dp",carSizeDp).apply();
+                FrameLayout.LayoutParams params=(FrameLayout.LayoutParams)carMarker.getLayoutParams();
+                params.width=DriveUi.dp(this,carSizeDp);
+                params.height=DriveUi.dp(this,carSizeDp);
+                carMarker.setLayoutParams(params);
+                carMarker.invalidate();
+                status.setText("Car marker size set to "+labels[index].split(" — ")[0]);
+                dialog.dismiss();
             }).setNegativeButton("Cancel",null).show();
     }
     private void pickAddressDatabase() {
@@ -765,8 +792,13 @@ public final class MapActivity extends Activity {
             carMarker.update(0,false);
             return;
         }
-        if (!userMovedMap)
-            mapView.setCenter(new LatLong(location.getLatitude(),location.getLongitude()));
+        if (userMovedMap) {
+            // An on-screen centred marker would point to the wrong place after pan.
+            // Hide it until GPS recentres the map; never misrepresent vehicle location.
+            carMarker.update(0,false);
+            return;
+        }
+        mapView.setCenter(new LatLong(location.getLatitude(),location.getLongitude()));
         carMarker.update(location.hasBearing()?location.getBearing():0,true);
     }
     private void removeRouteOverlay() {
