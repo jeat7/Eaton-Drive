@@ -456,7 +456,7 @@ public final class MapActivity extends Activity {
                                     + "The West Midlands pack should contain Crayford Road.";
                             new AlertDialog.Builder(this).setTitle("Offline address search")
                                 .setMessage(details)
-                                .setPositiveButton("SETUP",(d,w)->openSetup())
+                                .setPositiveButton("SETUP",(setupDialog,buttonIndex)->openSetup())
                                 .setNegativeButton("Close",null).show();
                             status.setText(problem!=null && !problem.isEmpty()
                                 ? "Address search error: " + problem : "No address matches"); return;
