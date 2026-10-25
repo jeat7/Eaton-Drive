@@ -38,6 +38,7 @@ import uk.co.eaton.drive.routing.RouteParser;
 import uk.co.eaton.drive.routing.NavigationSession;
 import uk.co.eaton.drive.routing.VoiceGuide;
 import uk.co.eaton.drive.postcode.PostcodeStore;
+import uk.co.eaton.drive.address.AddressStore;
 import java.util.ArrayList;
 import java.util.Locale;
 import org.mapsforge.map.android.graphics.AndroidGraphicFactory;
@@ -65,6 +66,7 @@ import uk.co.eaton.drive.ui.DriveUi;
 public final class MapActivity extends Activity {
     private static final int IMPORT_MAP = 43;
     private static final int IMPORT_ROADS = 45;
+    private static final int IMPORT_ADDRESSES = 46;
     private static final int LOCATION_REQUEST = 902;
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -78,6 +80,7 @@ public final class MapActivity extends Activity {
     private volatile boolean copying;
     private EmbeddedRouter routing;
     private PostcodeStore postcodes;
+    private AddressStore addressStore;
     private VoiceGuide voice;
     private NavigationSession navigation;
     private RouteParser.Route plannedRoute, primaryRoute, alternativeRoute;
@@ -101,6 +104,7 @@ public final class MapActivity extends Activity {
         gps = new GpsTracker(this, this::onGps);
         routing = new EmbeddedRouter(this);
         postcodes = new PostcodeStore(this);
+        addressStore = new AddressStore(this);
         voice = new VoiceGuide(this);
         loadInstalledMaps();
         prepareBuiltInPostcodes();
@@ -141,7 +145,8 @@ public final class MapActivity extends Activity {
         addButton(row1, "VOICE", this::toggleVoice);
         addButton(row1, "SETUP", this::openSetup);
         addButton(row2, "POSTCODE", this::enterPostcode);
-        pinButton = addButton(row2, "MAP PIN", this::selectMapCentre);
+        addButton(row2, "ADDRESS", this::searchAddress);
+        pinButton = addButton(row2, "PIN", this::selectMapCentre);
         addButton(row2, "PLAN", () -> calculateRoute(false));
         addButton(row2, "OTHER ROUTE", this::chooseAlternative);
         addButton(row2, "GO", this::startGuidance);
@@ -218,6 +223,10 @@ public final class MapActivity extends Activity {
             importRoadDocuments(data);
             return;
         }
+        if (requestCode == IMPORT_ADDRESSES) {
+            if (data.getData()!=null) importAddressDatabase(data.getData());
+            return;
+        }
         if (requestCode != IMPORT_MAP || data.getData() == null) return;
         copying = true;
         setMessage("Importing local offline map...");
@@ -288,7 +297,8 @@ public final class MapActivity extends Activity {
                 : "The built-in postcode database is unavailable. Check storage and reinstall the current APK."))
             + "\n\nYour offline map files remain saved between launches."
             + "\nMap regions are rendered as needed near the screen position."
-            + "\n\nPostcode data: Postcodes UK, September 2026. GB only. Offline map © OpenStreetMap contributors.";
+            + "\n\nStreet and house-number search: " + (addressStore.installed() ? "regional index installed." : "requires a regional index in SETUP.")
+            + "\nPostcode data: Postcodes UK, September 2026. GB only. Offline map © OpenStreetMap contributors.";
         new AlertDialog.Builder(this).setTitle("Offline data")
             .setMessage(message).setPositiveButton("OK", null).show();
     }
@@ -346,12 +356,14 @@ public final class MapActivity extends Activity {
         });
     }
     private void openSetup() {
-        String[] choices = {"Import map regions","Import driving roads","Offline data status"};
+        String[] choices = {"Import map regions","Import driving roads",
+            "Import street/address search index","Offline data status"};
         new AlertDialog.Builder(this).setTitle("Eaton Drive setup")
             .setItems(choices,(d,index) -> {
                 if (index == 0) importMap();
                 if (index == 1) configureRoads();
-                if (index == 2) showDataStatus();
+                if (index == 2) pickAddressDatabase();
+                if (index == 3) showDataStatus();
             }).setNegativeButton("Close",null).show();
     }
     private RouteOptions preferredOptions(int alternate) {
@@ -378,6 +390,76 @@ public final class MapActivity extends Activity {
                     routeInfo.setVisibility(View.GONE);
                     status.setText("Preferences saved • Tap PLAN to recalculate");
                 }
+            }).setNegativeButton("Cancel",null).show();
+    }
+    private void pickAddressDatabase() {
+        if (copying) return;
+        Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        picker.addCategory(Intent.CATEGORY_OPENABLE);
+        picker.setType("*/*");
+        startActivityForResult(picker,IMPORT_ADDRESSES);
+    }
+    private void importAddressDatabase(Uri chosen) {
+        if (copying) return;
+        copying=true;
+        status.setText("Installing offline address search index...");
+        io.execute(() -> {
+            String result;
+            try { result=addressStore.importIndex(chosen); }
+            catch (Exception e) {
+                result="Address installation failed: "+(e.getMessage()==null?e.getClass().getSimpleName():e.getMessage());
+            }
+            final String message=result;
+            main.post(() -> {
+                copying=false;
+                status.setText(message);
+                new AlertDialog.Builder(this).setTitle("Offline address search")
+                    .setMessage(message).setPositiveButton("OK",null).show();
+            });
+        });
+    }
+    private void searchAddress() {
+        if (!addressStore.installed()) {
+            new AlertDialog.Builder(this).setTitle("Offline street & house search")
+                .setMessage("Download and extract a regional Eaton Drive address-index package. "
+                    + "Then import its .db file once using SETUP > Import street/address search index. "
+                    + "We currently have a West Midlands test pack. "
+                    + "Only streets and house numbers mapped in OpenStreetMap are searchable.")
+                .setPositiveButton("Import index",(d,w)->pickAddressDatabase())
+                .setNegativeButton("Close",null).show();
+            return;
+        }
+        EditText text = new EditText(this);
+        text.setHint("e.g. 14 High Street, or Stoke");
+        text.setSingleLine(true);
+        new AlertDialog.Builder(this).setTitle("Find offline address")
+            .setView(text)
+            .setPositiveButton("Search",(d,w) -> {
+                String query=text.getText().toString();
+                status.setText("Searching offline streets and addresses...");
+                io.execute(() -> {
+                    List<AddressStore.Result> found=addressStore.search(query);
+                    main.post(() -> {
+                        if (isFinishing()||isDestroyed()) return;
+                        if (found.isEmpty()) {
+                            new AlertDialog.Builder(this).setTitle("No offline matches")
+                                .setMessage("No mapped results for this search in the installed region. "
+                                    + "Try a street name without the house number, or use POSTCODE.")
+                                .setPositiveButton("OK",null).show();
+                            status.setText("No address matches"); return;
+                        }
+                        String[] labels=new String[found.size()];
+                        for(int i=0;i<labels.length;i++)labels[i]=found.get(i).label;
+                        new AlertDialog.Builder(this).setTitle("Select destination")
+                            .setItems(labels,(a,index) -> {
+                                AddressStore.Result selected=found.get(index);
+                                setDestination(selected.point);
+                                mapView.setCenter(new LatLong(selected.point.lat,selected.point.lon));
+                                mapView.setZoomLevel((byte)16);
+                                status.setText("Selected "+selected.label+" • tap PLAN");
+                            }).setNegativeButton("Cancel",null).show();
+                    });
+                });
             }).setNegativeButton("Cancel",null).show();
     }
     private void enterPostcode() {
@@ -517,7 +599,7 @@ public final class MapActivity extends Activity {
         setDestination(new RouteParser.Point(centre.latitude, centre.longitude));
         choosingPin = false;
         centrePin.setVisibility(View.GONE);
-        pinButton.setText("MAP PIN");
+        pinButton.setText("PIN");
         status.setText("Destination selected • Tap PLAN");
     }
     private void setDestination(RouteParser.Point point) {
@@ -657,7 +739,7 @@ public final class MapActivity extends Activity {
         userMovedMap = false;
         centrePin.setVisibility(View.GONE);
         choosingPin = false;
-        pinButton.setText("MAP PIN");
+        pinButton.setText("PIN");
         status.setText(navigation.hasTurns() ? "Guidance started • following GPS"
             : "Following GPS • route has no spoken-turn instructions");
         displayRoute(plannedRoute);
@@ -688,7 +770,7 @@ public final class MapActivity extends Activity {
         carMarker.update(0,false);
         choosingPin = false;
         centrePin.setVisibility(View.GONE);
-        pinButton.setText("MAP PIN");
+        pinButton.setText("PIN");
         if (voice != null) voice.say("Navigation stopped");
         destination = null;
         removeRouteOverlay();

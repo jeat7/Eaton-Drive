@@ -1,4 +1,4 @@
-# Eaton Drive v0.6.1 — embedded BRouter with lookup table fix
+# Eaton Drive v0.7.1 — route planning, live following and optional offline address search
 
 Native Android 11-compatible landscape launcher for the Rimoodly 9-inch 1024×600 Suzuki Celerio head unit (advertised 1GB RAM, 16GB flash).
 
@@ -83,3 +83,14 @@ Use **B1 1BB** (Birmingham) or **SW1A 1AA** (London) to verify the embedded look
 The BRouter offline engine requires a matching `lookups.dat` beside its car driving profile. v0.6 omitted that configuration and could report `FileNotFoundException: .../routing-profiles/lookups.dat` even when road tiles were installed. The pinned BRouter 1.7.10 file is now bundled automatically at APK build time and installed into Eaton Drive's private routing profile directory before the route engine starts. Reimporting `.rd5` files is **not** required to correct the missing lookup table.
 
 After updating from v0.6 to v0.6.1, open Navigation, select a postcode and press START ROUTE. If you see a new error, capture its exact wording. Route calculation, road snapping, voice directions and turn validation still need phone and in-car tests before driving use.
+
+
+## v0.7.1 sat-nav improvements
+- Route preferences in Navigation > OPTIONS: avoid motorways and toll roads, saved between sessions; BRouter car-vario profile receives both switches.
+- PLAN shows a route preview with miles and calculated journey time. OTHER ROUTE calculates BRouter's second-choice routing path **on demand**, then lets the driver compare the two by miles and travel time. Some journeys have no second distinct route.
+- GO begins foreground-only guidance and keeps the map centred on sufficiently accurate GPS; pan pauses auto-follow until pressing GPS. The light-blue top-down vehicle drawing uses GPS heading and location. Never show an inaccurate/stale position as if valid.
+- PIN enables a visible destination marker while moving the map; SET PIN confirms the spot under the marker tip.
+- ROUTE ETA uses BRouter's travel-time calculation when provided; otherwise a clearly approximate fallback. Live remaining figures are distance-proportional estimates, not traffic aware.
+- ADDRESS searches an optional FTS4 SQLite index created from a regional OpenStreetMap extract. The available first region is West Midlands (covers Stoke, Dudley, Birmingham etc). It is not included in APK or Mapsforge map data. Build it with Actions > Prepare Eaton Drive offline street and address search, download artifact, extract ZIP, then choose SETUP > Import street/address search index and select the .db file. Enter road name, road + house number, or mapped place; select a result to set destination.
+- Address search only finds OSM-mapped names and house numbers. Road-centre results can be approximate; check the pin before going. © OpenStreetMap contributors, ODbL. Source https://download.geofabrik.de/europe/united-kingdom/england/west-midlands.html.
+- Still experimental. Maps, routing, voice and marker behaviour are not validated on the actual head unit or in a moving car. Keep testing while parked.

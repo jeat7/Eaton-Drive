@@ -1,0 +1,32 @@
+name: Prepare Eaton Drive offline street and address search
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/build_osm_addresses.py'
+      - '.github/workflows/offline-addresses.yml'
+permissions:
+  contents: read
+
+jobs:
+  address_index:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install OpenStreetMap PBF parser
+        run: python -m pip install --disable-pip-version-check "osmium==4.1.1"
+      - name: Download West Midlands extract and build local search index
+        run: python scripts/build_osm_addresses.py --region west-midlands out/addresses
+      - name: Publish importable street/address database
+        uses: actions/upload-artifact@v4
+        with:
+          name: Eaton-Drive-West-Midlands-Addresses
+          path: out/addresses/
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error
