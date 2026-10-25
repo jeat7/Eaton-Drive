@@ -25,7 +25,20 @@ public final class AddressStore {
         }
     }
     private final Context app;
+    private volatile String lastSearchError = "";
     public AddressStore(Context context) { app = context.getApplicationContext(); }
+    public String lastSearchError() { return lastSearchError; }
+    /** The number of search-index entries; zero also indicates missing/corrupt data. */
+    public long recordCount() {
+        if (!installed()) return 0;
+        try (SQLiteDatabase db = SQLiteDatabase.openDatabase(database().getAbsolutePath(),null,SQLiteDatabase.OPEN_READONLY);
+             Cursor c = db.rawQuery("SELECT COUNT(*) FROM locations",null)) {
+            return c.moveToFirst() ? c.getLong(0) : 0;
+        } catch (RuntimeException exception) {
+            lastSearchError = exception.getClass().getSimpleName() + ": " + exception.getMessage();
+            return 0;
+        }
+    }
     private File database() { return app.getDatabasePath("eaton-addresses.db"); }
     private boolean valid(File file) {
         if (!file.isFile() || file.length() < 65536) return false;
@@ -72,33 +85,65 @@ public final class AddressStore {
     public List<Result> search(String text) { return search(text,null); }
     public List<Result> search(String text, RouteParser.Point near) {
         List<Result> results = new ArrayList<>();
-        if (!installed()) return results;
+        lastSearchError = "";
+        if (!installed()) {
+            lastSearchError = "Offline address index is not installed";
+            return results;
+        }
         String match = AddressQuery.matchExpression(text);
         if (match.isEmpty()) return results;
-        String sql = "SELECT name,house,place,lat,lon FROM locations WHERE locations MATCH ? ";
-        String[] args;
-        if (near != null) {
-            // Sort matching results by approximate squared distance before limiting.
-            // This is especially important for common street names like High Street.
-            sql += "ORDER BY ((CAST(lat AS REAL)-?)*(CAST(lat AS REAL)-?)"
-                + "+0.37*(CAST(lon AS REAL)-?)*(CAST(lon AS REAL)-?)) LIMIT 40";
-            args = new String[]{match,Double.toString(near.lat),Double.toString(near.lat),
-                Double.toString(near.lon),Double.toString(near.lon)};
-        } else {
-            sql += "LIMIT 40";
-            args = new String[]{match};
-        }
-        try (SQLiteDatabase db = SQLiteDatabase.openDatabase(database().getAbsolutePath(),null,SQLiteDatabase.OPEN_READONLY);
-             Cursor c = db.rawQuery(sql,args)) {
-            while (c.moveToNext()) {
-                String road=c.getString(0),house=c.getString(1),place=c.getString(2);
-                if (road == null || road.trim().isEmpty()) continue;
-                String label = ((house==null||house.isEmpty())?"":house+" ") + road;
-                if (place!=null&&!place.isEmpty()) label+=", "+place;
-                try { results.add(new Result(label,c.getDouble(3),c.getDouble(4))); }
-                catch (IllegalArgumentException ignored) { }
+        try (SQLiteDatabase db = SQLiteDatabase.openDatabase(database().getAbsolutePath(),null,SQLiteDatabase.OPEN_READONLY)) {
+            // First use the indexed lookup, which is fast for 400,000+ records.
+            try {
+                String sql = "SELECT name,house,place,lat,lon FROM locations WHERE locations MATCH ? ";
+                String[] args;
+                if (near != null) {
+                    sql += "ORDER BY ((CAST(lat AS REAL)-?)*(CAST(lat AS REAL)-?)"
+                        + "+0.37*(CAST(lon AS REAL)-?)*(CAST(lon AS REAL)-?)) LIMIT 40";
+                    args = new String[]{match,Double.toString(near.lat),Double.toString(near.lat),
+                        Double.toString(near.lon),Double.toString(near.lon)};
+                } else {
+                    sql += "LIMIT 40";
+                    args = new String[]{match};
+                }
+                try (Cursor c = db.rawQuery(sql,args)) {
+                    read(c,results);
+                }
+            } catch (RuntimeException ftsProblem) {
+                lastSearchError = "Indexed search: " + ftsProblem.getClass().getSimpleName()
+                    + ": " + ftsProblem.getMessage();
             }
-        } catch (RuntimeException ignored) { }
+            // Android device SQLite versions differ. Fall back to an exact street
+            // substring search (not generic full-table postcode geocoding).
+            if (results.isEmpty()) {
+                String street = text == null ? "" : text.trim();
+                if (street.length() > 1 && street.length() < 120) {
+                    String sql = "SELECT name,house,place,lat,lon FROM locations"
+                        + " WHERE LOWER(name) LIKE ? ESCAPE '\\' LIMIT 40";
+                    String safe = street.toLowerCase(Locale.UK)
+                        .replace("\\","\\\\").replace("%","\\%").replace("_","\\_");
+                    try (Cursor c = db.rawQuery(sql,new String[]{"%"+safe+"%"})) {
+                        read(c,results);
+                        if (!results.isEmpty()) lastSearchError = "";
+                    } catch (RuntimeException fallbackProblem) {
+                        lastSearchError += " / Street fallback: "
+                            + fallbackProblem.getClass().getSimpleName() + ": " + fallbackProblem.getMessage();
+                    }
+                }
+            }
+        } catch (RuntimeException openProblem) {
+            lastSearchError = "Cannot open offline address index: " + openProblem.getMessage();
+        }
         return results;
+    }
+    private static void read(Cursor c, List<Result> results) {
+        while (c.moveToNext()) {
+            String road = c.getString(0), house = c.getString(1), place = c.getString(2);
+            if (road == null || road.trim().isEmpty()) continue;
+            String label = ((house == null || house.isEmpty()) ? "" : house + " ") + road;
+            if (place != null && !place.isEmpty()) label += ", " + place;
+            try { results.add(new Result(label,c.getDouble(3),c.getDouble(4))); }
+            catch (IllegalArgumentException ignored) { }
+        }
     }
 }
