@@ -1,4 +1,4 @@
-# Eaton Drive v0.8.0 — Eaton-branded offline Android navigation
+# Eaton Drive v0.9 — destination-first navigation and foreground spoken guidance
 
 A native Java Android launcher and experimental offline sat-nav for the 2015–2018 Suzuki Celerio's third-party Rimoodly head unit, advertised as Android 11, 1024×600, 1GB RAM, 16GB storage.
 
@@ -37,3 +37,15 @@ Maps and routing files need ample free space on the 16GB unit; no file is downlo
 Navigation is foreground-only and stops GPS when MapActivity loses focus; it does not yet reliably provide directions while listening to OEM FM/phone apps. The Suzuki car artwork is original, not an official Suzuki logo. Offline ETA is not traffic aware. Debug signing keys may change between GitHub builds, making upgrades fail; **back up map and routing downloads before uninstalling**.
 
 © OpenStreetMap contributors (ODbL), Geofabrik regional data; Postcodes UK, ONS, OS and Royal Mail sources with applicable public sector notices. Embedded BRouter core used under its MIT licence (licence bundled in the APK). Device MCU, GPS antenna and radio/reversing compatibility must be verified separately; do not flash unknown head-unit firmware.
+
+
+## v0.9 — destination-first navigation and continued spoken guidance
+
+- **WHERE TO?** searches full GB postcodes, offline street/town/house addresses in one large entry. PIN remains for manual location picking. PLAN → optionally ROUTES → GO; STOP finishes navigation.
+- Prominent next-turn banner shows true BRouter manoeuvres, signal loss or missing instructions; a separate live status panel shows estimated miles and minutes remaining.
+- Android **location foreground service** owns GPS, off-route recalculation and speech after GO. Persistent notification has current guidance, opens Eaton Drive when tapped and has a STOP action.
+- The service is started only by GO in a visible activity after precise-location permission. No automatic restart after an ignition or process restart. It is intended to continue spoken navigation when OEM radio/music/phone apps are opened, subject to their firmware and audio behaviour.
+- Reopening the map reconnects to the running journey without recalculating the initial route. A validated app-private route file hands the chosen route to the service; route calculations and TTS are lazily allocated.
+- VOICE / MUTE setting is shared with the service and persisted.
+- Automated unit tests cover next-turn banner labels and remaining-time calculations.
+- **Not validated in the car:** Android ROM may restrict services/audio, and spoken hints, actual navigation reliability, reverse camera and OEM radio must be checked before driving. Continue testing stationary/passenger-only.

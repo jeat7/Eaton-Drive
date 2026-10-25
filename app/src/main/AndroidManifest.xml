@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
     <uses-feature android:name="android.hardware.location.gps" android:required="false"/>
     <uses-feature android:name="android.hardware.touchscreen" android:required="true"/>
     <queries>
@@ -12,6 +14,8 @@
         android:icon="@drawable/ic_eaton_drive"
         android:theme="@android:style/Theme.Material.NoActionBar"
         android:usesCleartextTraffic="false">
+        <service android:name=".routing.NavigationService" android:exported="false"
+            android:foregroundServiceType="location" android:stopWithTask="false"/>
         <activity android:name=".MapActivity" android:exported="false" android:screenOrientation="landscape"/>
         <activity android:name=".MainActivity" android:exported="true" android:screenOrientation="landscape">
             <intent-filter>
