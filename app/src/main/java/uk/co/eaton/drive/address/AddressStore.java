@@ -149,14 +149,9 @@ public final class AddressStore {
         while (c.moveToNext()) {
             String road = c.getString(0), house = c.getString(1), place = c.getString(2);
             if (road == null || road.trim().isEmpty()) continue;
-            String label = ((house == null || house.isEmpty()) ? "" : house + " ") + road;
             String locality = c.getColumnCount() > 5 ? c.getString(5) : "";
             String district = c.getColumnCount() > 6 ? c.getString(6) : "";
-            if (locality != null && !locality.isEmpty() && !locality.equalsIgnoreCase(road))
-                label += ", " + locality;
-            else if (place != null && !place.isEmpty() && !place.equalsIgnoreCase(road))
-                label += ", " + place;
-            if (district != null && !district.isEmpty()) label += ", " + district;
+            String label = AddressLabel.format(road,house,place,locality,district);
             // The index has many nearby segments of the same street; display each
             // distinct location label once. FTS results are already distance-sorted.
             boolean duplicate = false;
