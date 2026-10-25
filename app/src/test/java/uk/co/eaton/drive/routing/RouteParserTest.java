@@ -20,6 +20,15 @@ public class RouteParserTest {
             fail("XXE must be rejected");
         } catch (Exception expected) { /* secure rejection */ }
     }
+    @Test public void rejectsDoctypeEvenWithoutVendorSpecificSaxFeatures() throws Exception {
+        try {
+            RouteParser.parse("<?xml version=\"1.0\"?><!DOCTYPE gpx [<!ENTITY x SYSTEM 'file:///etc/passwd'>]>"
+                + "<gpx><trk><trkpt lat='52' lon='-1'/></trk></gpx>");
+            fail("DOCTYPE must be rejected");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("declarations"));
+        }
+    }
     @Test public void rejectsInvalidCoordinates() {
         try { new RouteParser.Point(91, -1); fail(); }
         catch (IllegalArgumentException expected) { }

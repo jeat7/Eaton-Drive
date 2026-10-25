@@ -7,6 +7,9 @@ import java.util.List;
 import javax.xml.parsers.SAXParserFactory;
 import org.xml.sax.Attributes;
 import org.xml.sax.InputSource;
+import org.xml.sax.SAXException;
+import org.xml.sax.XMLReader;
+import java.util.Locale;
 import org.xml.sax.helpers.DefaultHandler;
 
 /** Streaming GPX parser with optional BRouter OsmAnd-format turn hints. */
@@ -53,16 +56,29 @@ public final class RouteParser {
         if (!trimmed.startsWith("<")) {
             throw new IllegalArgumentException(trimmed.length() > 160 ? trimmed.substring(0,160) : trimmed);
         }
+        // Android's SAX implementation does not support Xerces' disallow-doctype-decl.
+        // The route is locally generated GPX; reject all DTD/entity declarations in
+        // the input before parsing, and defensively block external resolution.
+        String upper = trimmed.toUpperCase(Locale.ROOT);
+        if (upper.contains("<!DOCTYPE") || upper.contains("<!ENTITY"))
+            throw new IllegalArgumentException("GPX document declarations are not allowed");
         SAXParserFactory factory = SAXParserFactory.newInstance();
         factory.setNamespaceAware(true);
-        factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-        factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
-        factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+        XMLReader xml = factory.newSAXParser().getXMLReader();
+        xml.setEntityResolver((publicId, systemId) -> {
+            throw new SAXException("External GPX entities are not permitted");
+        });
+        // Some Android versions reject these optional SAX feature names. The
+        // explicit DTD rejection above is required independently of these flags.
+        try { xml.setFeature("http://xml.org/sax/features/external-general-entities", false); }
+        catch (SAXException unsupported) { /* DTD inputs already rejected */ }
+        try { xml.setFeature("http://xml.org/sax/features/external-parameter-entities", false); }
+        catch (SAXException unsupported) { /* DTD inputs already rejected */ }
         ArrayList<Point> track = new ArrayList<>();
         ArrayList<Point> fallback = new ArrayList<>();
         ArrayList<Hint> rawTurns = new ArrayList<>();
         final boolean[] isGpx = { false };
-        factory.newSAXParser().parse(new InputSource(new StringReader(trimmed)), new DefaultHandler() {
+        xml.setContentHandler(new DefaultHandler() {
             Hint pending;
             boolean readingTurn;
             StringBuilder turnText = new StringBuilder();
@@ -95,6 +111,7 @@ public final class RouteParser {
                 }
             }
         });
+        xml.parse(new InputSource(new StringReader(trimmed)));
         if (!isGpx[0]) throw new IllegalArgumentException("Not a GPX route");
         ArrayList<Point> points = track.size() >= 2 ? track : fallback;
         if (points.size() < 2) throw new IllegalArgumentException("Route contains fewer than two points");
