@@ -1,0 +1,123 @@
+name: Eaton Drive permanent signed APK
+
+# Explicit and secret-protected: never expose the private signing key to
+# untrusted pull requests or tag workflows. Run once after configuring secrets.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eaton-drive-permanent-signing
+  cancel-in-progress: false
+
+jobs:
+  signed_android:
+    name: Build permanently signed installable APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      EATON_DRIVE_SIGNED_BUILD_NUMBER: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare permanent release key from GitHub Secrets
+        shell: bash
+        env:
+          EATON_DRIVE_KEYSTORE_B64: ${{ secrets.EATON_DRIVE_KEYSTORE_B64 }}
+          EATON_DRIVE_STORE_PASSWORD: ${{ secrets.EATON_DRIVE_STORE_PASSWORD }}
+        run: |
+          python3 - <<'PY'
+          import base64, os, pathlib, sys
+          encoded = os.environ.get("EATON_DRIVE_KEYSTORE_B64", "")
+          password = os.environ.get("EATON_DRIVE_STORE_PASSWORD", "")
+          if not encoded or not password:
+              sys.exit("Missing signing secrets: read SIGNING-AND-UPDATES.md. No APK was created.")
+          try:
+              raw = base64.b64decode(encoded,validate=True)
+          except Exception:
+              sys.exit("EATON_DRIVE_KEYSTORE_B64 is not valid base64.")
+          if not 1000 < len(raw) < 48000:
+              sys.exit("Signing keystore has an unexpected size.")
+          output = pathlib.Path(os.environ["RUNNER_TEMP"]) / "eaton-drive-release.jks"
+          output.write_bytes(raw)
+          output.chmod(0o600)
+          with open(os.environ["GITHUB_ENV"],"a") as env:
+              env.write(f"EATON_DRIVE_KEYSTORE_FILE={output}\n")
+          print("Release keystore restored (private signing key not printed).")
+          PY
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Verify permanent signing alias and password
+        env:
+          EATON_DRIVE_STORE_PASSWORD: ${{ secrets.EATON_DRIVE_STORE_PASSWORD }}
+        shell: bash
+        run: |
+          keytool -list -alias eaton-drive -keystore "$EATON_DRIVE_KEYSTORE_FILE"             -storepass:env EATON_DRIVE_STORE_PASSWORD >/dev/null
+          echo "Signing keystore and alias valid."
+      - name: Fetch pinned MIT-licensed BRouter engine
+        uses: actions/checkout@v4
+        with:
+          repository: abrensch/brouter
+          ref: 4d2639af77ea5ed9c30d3e400764eb6f9e8522da
+          path: vendor/brouter
+          persist-credentials: false
+      - name: Bundle driving profile and lookup data
+        run: |
+          mkdir -p app/src/main/assets/brouter
+          cp vendor/brouter/misc/profiles2/car-vario.brf app/src/main/assets/brouter/car-vario.brf
+          cp vendor/brouter/misc/profiles2/lookups.dat app/src/main/assets/brouter/lookups.dat
+          cp vendor/brouter/LICENSE app/src/main/assets/brouter/LICENSE.txt
+          test -s app/src/main/assets/brouter/car-vario.brf
+          test -s app/src/main/assets/brouter/lookups.dat
+      - uses: android-actions/setup-android@v4
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Restore built-in indexed postcode database
+        uses: actions/cache@v4
+        with:
+          path: app/src/main/assets/gb-postcodes.db
+          key: eatondrive-gb-postcodes-2026-09-v5
+      - name: Validate built-in Great Britain postcode data
+        run: |
+          if [ ! -s app/src/main/assets/gb-postcodes.db ]; then
+            python3 scripts/build_embedded_postcodes.py
+          fi
+          python3 - <<'PY'
+          import sqlite3
+          with sqlite3.connect("file:app/src/main/assets/gb-postcodes.db?mode=ro",uri=True) as db:
+              count=db.execute("SELECT COUNT(*) FROM postcodes").fetchone()[0]
+              assert count>1500000,count
+              assert db.execute("PRAGMA quick_check").fetchone()[0]=="ok"
+              print(f"Bundled postcode data verified: {count:,} records")
+          PY
+      - name: Unit tests
+        run: gradle :app:testDebugUnitTest --no-daemon
+      - name: Build permanently signed release APK
+        env:
+          EATON_DRIVE_STORE_PASSWORD: ${{ secrets.EATON_DRIVE_STORE_PASSWORD }}
+        run: gradle :app:assembleRelease --no-daemon
+      - name: Verify APK signature, package and SHA-256
+        shell: bash
+        run: |
+          APK=app/build/outputs/apk/release/app-release.apk
+          test -s "$APK"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -name apksigner -type f | sort -V | tail -n1)"
+          test -n "$APKSIGNER"
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
+          sha256sum "$APK"
+          echo "Signed release APK verified."
+      - name: Upload installable APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Eaton-Drive-PERMANENTLY-SIGNED-APK
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
+      - name: Discard local private signing key
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/eaton-drive-release.jks"

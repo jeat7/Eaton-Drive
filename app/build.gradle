@@ -1,5 +1,12 @@
 plugins { id 'com.android.application' }
 
+// Every GitHub-signed release gets a monotonically increasing versionCode.
+// The debug APK continues using the conventional source versionCode.
+// Never use or store a private signing key in Git.
+def signedRunNumber = System.getenv('EATON_DRIVE_SIGNED_BUILD_NUMBER')
+def permanentKeystore = System.getenv('EATON_DRIVE_KEYSTORE_FILE')
+def permanentKeystorePassword = System.getenv('EATON_DRIVE_STORE_PASSWORD')
+
 android {
     buildFeatures { aidl true }
     namespace 'uk.co.eaton.drive'
@@ -8,8 +15,26 @@ android {
         applicationId 'uk.co.eaton.drive'
         minSdk 23
         targetSdk 32
-        versionCode 16
-        versionName '0.9.1'
+        versionCode signedRunNumber ? 200000 + Integer.parseInt(signedRunNumber) : 17
+        versionName '0.9.2'
+    }
+    signingConfigs {
+        permanentRelease {
+            // Only populated inside the explicitly invoked signed-release workflow.
+            if (permanentKeystore && permanentKeystorePassword) {
+                storeFile file(permanentKeystore)
+                storePassword permanentKeystorePassword
+                keyAlias 'eaton-drive'
+                keyPassword permanentKeystorePassword
+            }
+        }
+    }
+    buildTypes {
+        release {
+            if (permanentKeystore && permanentKeystorePassword)
+                signingConfig signingConfigs.permanentRelease
+            minifyEnabled false
+        }
     }
     sourceSets {
         main {
