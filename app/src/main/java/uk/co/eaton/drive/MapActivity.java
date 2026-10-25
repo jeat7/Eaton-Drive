@@ -301,7 +301,10 @@ public final class MapActivity extends Activity {
             + "\nMap regions are rendered as needed near the screen position."
             + "\n\nStreet and house-number index: "
             + (addressStore.installed()
-                ? String.format(Locale.UK, "%,d searchable records installed.", addressStore.recordCount())
+                ? String.format(Locale.UK, "%,d searchable records installed • %s",
+                    addressStore.recordCount(),
+                    addressStore.hasDetailedAreaLabels() ? "enhanced neighbourhood/district labels ready."
+                        : "older index — import the new West Midlands v2 .db for area labels.")
                 : "NOT INSTALLED — choose SETUP > Import street/address search index.")
             + "\nPostcode data: Postcodes UK, September 2026. GB only. Offline map © OpenStreetMap contributors.";
         new AlertDialog.Builder(this).setTitle("Offline data")
