@@ -60,6 +60,23 @@ jobs:
         run: gradle :app:testDebugUnitTest --no-daemon
       - name: Assemble debug APK
         run: gradle :app:assembleDebug --no-daemon
+      - name: Smoke-test release signing with a disposable key (never distributed)
+        shell: bash
+        run: |
+          KEYSTORE="$RUNNER_TEMP/throwaway-test-signing.jks"
+          keytool -genkeypair -noprompt -keystore "$KEYSTORE" -storetype PKCS12 \
+            -alias eaton-drive -keyalg RSA -keysize 2048 -validity 2 \
+            -dname "CN=Throwaway CI Signing Test" \
+            -storepass only_for_ephemeral_ci_test -keypass only_for_ephemeral_ci_test >/dev/null 2>&1
+          EATON_DRIVE_KEYSTORE_FILE="$KEYSTORE" \
+          EATON_DRIVE_STORE_PASSWORD="only_for_ephemeral_ci_test" \
+          EATON_DRIVE_SIGNED_BUILD_NUMBER=1 \
+            gradle :app:assembleRelease --no-daemon
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -type f -name apksigner | sort -V | tail -n 1)"
+          test -n "$APKSIGNER"
+          "$APKSIGNER" verify app/build/outputs/apk/release/app-release.apk
+          rm -f "$KEYSTORE" app/build/outputs/apk/release/app-release.apk
+          echo "Signed-build smoke test passed; disposable key/APK discarded."
       - uses: actions/upload-artifact@v4
         with:
           name: Eaton-Drive-debug-APK
