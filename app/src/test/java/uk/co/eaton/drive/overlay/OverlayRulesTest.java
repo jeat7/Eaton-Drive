@@ -8,8 +8,12 @@ public class OverlayRulesTest {
         assertTrue(OverlayRules.showForShortcut("radio",true,true));
         assertTrue(OverlayRules.showForShortcut("music",true,true));
     }
-    @Test public void neverStartAutomaticallyForPhoneOrOtherApps(){
-        assertFalse(OverlayRules.showForShortcut("phone",true,true));
+    @Test public void phoneIncludedWhenUserHasEnabledOverlay(){
+        assertTrue(OverlayRules.showForShortcut("phone",true,true));
+        assertFalse(OverlayRules.showForShortcut("phone",false,true));
+        assertFalse(OverlayRules.showForShortcut("phone",true,false));
+    }
+    @Test public void neverStartAutomaticallyForNonShortcutApps(){
         assertFalse(OverlayRules.showForShortcut("navigation",true,true));
         assertFalse(OverlayRules.showForShortcut(null,true,true));
     }

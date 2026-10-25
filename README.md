@@ -1,4 +1,4 @@
-# Eaton Drive v0.12.1 — floating Home portrait/landscape fix
+# Eaton Drive v0.12.2 — optional floating Home now supports Phone
 
 A native Java Android launcher and experimental offline sat-nav for the 2015–2018 Suzuki Celerio's third-party Rimoodly head unit, advertised as Android 11, 1024×600, 1GB RAM, 16GB storage.
 
@@ -112,3 +112,12 @@ Navigation is foreground-only and stops GPS when MapActivity loses focus; it doe
 - Overlay support still depends on Android firmware and manufacturer-specific permissions; some phones/head units may prohibit it even with the Android permission allowed. A failed service startup now reports the exception class and records the reason.
 - **Safety:** if a proprietary reversing-camera, call or warning screen is obscured by the floating shortcut, disable it under Eaton Drive Settings and rely on the stereo's hardware/Android Home key. The shortcut is opt-in, off by default and never automatically started for PHONE.
 - Build is experimental and must be checked on the user's phone and Suzuki head unit. Previous debug APKs may need uninstall; back up imported offline datasets first.
+
+
+## v0.12.2 — optional Phone overlay
+- When **Floating Home** is enabled in Eaton Drive Settings, the small draggable overlay now launches for all three assigned shortcuts: **Radio, Music and Phone**. Previously Phone was explicitly excluded.
+- This retains the original user-granted Android 'Display over other apps' requirement. If floating Home is off, or overlay permission is denied, none of the three shortcuts starts it.
+- The existing notification **HIDE** action, long-press-to-hide gesture, return-to-launcher tap and landscape/portrait rotation fix continue to work.
+- Added regression tests covering Phone as well as Radio and Music, plus excluded unrelated app launches.
+- **Phone caveat:** vendor Bluetooth or Android Phone applications may prevent floating overlays on certain screens, particularly incoming-call, active-call or permission interfaces. Eaton Drive does not detect call state or automatically dismiss itself over active calls. Never allow the overlay to hide Answer, End Call, Mute, caller information or emergency controls; disable the feature and rely on the OEM Home control if necessary.
+- First test on the Suzuki must be **while parked**, including accepting and ending a test call and checking the reversing camera and any OEM system warnings.

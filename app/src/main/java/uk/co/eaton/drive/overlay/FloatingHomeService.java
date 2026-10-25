@@ -28,7 +28,7 @@ import uk.co.eaton.drive.MainActivity;
 import uk.co.eaton.drive.R;
 
 /**
- * User-enabled, small Home shortcut over RADIO/MUSIC only. No auto-start, no
+ * User-enabled, small Home shortcut over RADIO/MUSIC/PHONE. No auto-start, no
  * monitoring of other apps or screen content, and no additional GPS receiver.
  *
  * CAUTION: some vendor reversing-camera screens are ordinary Android windows.
@@ -93,7 +93,7 @@ public final class FloatingHomeService extends Service {
             if(nm!=null){
                 NotificationChannel c=new NotificationChannel(CHANNEL,"Eaton floating Home",
                     NotificationManager.IMPORTANCE_LOW);
-                c.setDescription("Optional shortcut back to Eaton Drive while Radio/Music is open");
+                c.setDescription("Optional Home shortcut for Radio, Music and Phone");
                 nm.createNotificationChannel(c);
             }
         }

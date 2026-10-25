@@ -392,7 +392,7 @@ public final class MainActivity extends Activity {
         new AlertDialog.Builder(this).setTitle("Eaton Drive • System settings")
             .setItems(new String[] {
                 "Default home launcher: "+launcherStatus,
-                "Floating Home for Radio/Music: "+overlayStatus,
+                "Floating Home for Radio/Music/Phone: "+overlayStatus,
                 "Test floating Home shortcut",
                 "Floating Home diagnostics",
                 "Assign FM radio application",
@@ -469,13 +469,14 @@ public final class MainActivity extends Activity {
         }
         new AlertDialog.Builder(this)
             .setTitle("Enable floating Home?")
-            .setMessage("Shows a small draggable Home button when you open Radio or Music "
+            .setMessage("Shows a small draggable Home button when you open Radio, Music OR Phone "
                 +"from Eaton Drive. It requires Android's Draw over other apps permission. "
                 +"It will NOT run automatically when the car starts. "
                 +"On some head units the button may appear over a reverse-camera or "
                 +"system warning screen. TEST WHILE PARKED; turn it off if anything "
-                +"is obstructed. Long-press the button or use the notification to hide it. "
-                +"No floating button is shown over the Phone shortcut by design.")
+                +"is obstructed. Phone apps and active calls may hide or reject overlays, "
+                +"and the button must never cover Answer, End Call, Mute or other "
+                +"essential controls. Long-press it or use the notification to hide it.")
             .setPositiveButton("CONTINUE",(dialog,which)->requestOverlayPermission())
             .setNegativeButton("CANCEL",null).show();
     }
@@ -487,7 +488,7 @@ public final class MainActivity extends Activity {
     private void requestOverlayPermission(){
         if(FloatingHomeService.permitted(this)){
             setOverlayEnabled(true);
-            Toast.makeText(this,"Floating Home enabled for Radio and Music",
+            Toast.makeText(this,"Floating Home enabled for Radio, Music and Phone",
                 Toast.LENGTH_LONG).show();
             return;
         }
@@ -527,8 +528,8 @@ public final class MainActivity extends Activity {
         new AlertDialog.Builder(this)
             .setTitle("Floating Home diagnostics")
             .setMessage(FloatingHomeService.diagnostics(this)
-                +"\n\nUse TEST to show the button on this screen. Open Music and "
-                +"check whether it remains visible after the phone rotates. "
+                +"\n\nUse TEST to show the button on this screen. Open Radio, Music "
+                +"or Phone from Eaton Drive and check it remains visible. "
                 +"If the last service state is Start failed, the error above "
                 +"may identify an Android or manufacturer restriction.")
             .setPositiveButton("TEST",(dialog,which)->testOverlay())
@@ -597,7 +598,7 @@ public final class MainActivity extends Activity {
             boolean granted=FloatingHomeService.permitted(this);
             setOverlayEnabled(granted);
             Toast.makeText(this,granted
-                ?"Floating Home enabled — open RADIO or MUSIC to test"
+                ?"Floating Home enabled — test RADIO, MUSIC and PHONE while parked"
                 :"Overlay permission not granted — Home key remains available",
                 Toast.LENGTH_LONG).show();
         }
