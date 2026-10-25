@@ -1,4 +1,4 @@
-# Eaton Drive v0.11.0 — Signature polish, saved Home and favourites
+# Eaton Drive v0.12.0 — launcher integration and optional floating Home
 
 A native Java Android launcher and experimental offline sat-nav for the 2015–2018 Suzuki Celerio's third-party Rimoodly head unit, advertised as Android 11, 1024×600, 1GB RAM, 16GB storage.
 
@@ -94,3 +94,12 @@ Navigation is foreground-only and stops GPS when MapActivity loses focus; it doe
 3. PLAN an offline journey with previously imported .map and .rd5 files; confirm the saved point is shown before starting GO.
 4. Compare the launcher at landscape phone, tablet and 1024×600: no clipped MPH digits, no oversized car, tappable NAVIGATION/RADIO/MUSIC/PHONE and SETTINGS.
 5. Check that background voice, GPS position and directions still behave as in v0.10.0.
+
+
+## v0.12.0 — Suzuki integration test release
+- Android Home activity already supports being the default launcher; Eaton Drive settings now check Home status and use the Android 10+ HOME role picker when available, falling back to the default-apps Settings screen on OEM firmware.
+- The user may **opt in** to a draggable small Home overlay for launches from RADIO or MUSIC. It requests Android Draw over other apps permission. It does **not** automatically start at ignition or over the PHONE shortcut. There is a notification HIDE action and long-press-to-hide gesture, and returning to Eaton Drive removes it.
+- Overlay permission/behaviour is manufacturer-specific, and **may overlay reversing-camera or phone UI** if these become foreground while radio/music is running. It is disabled by default; test while parked and keep disabled if it obscures any controls.
+- Added a head unit diagnostic view (Android release/build/model, display, RAM, Home selection, overlay permission) to assist tomorrow's verification. It cannot read proprietary MCU firmware IDs.
+- HOME launcher status and Radio/Music/Phone app assignment remain on device; active offline navigation continues through its separate location foreground service.
+- See **SUZUKI-HEAD-UNIT-TEST.md** for a parked test protocol and rollback steps. No custom ROM flash or firmware change is part of this release.
