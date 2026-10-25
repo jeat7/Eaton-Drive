@@ -54,6 +54,7 @@ public final class MainActivity extends Activity {
 
     private final Handler handler=new Handler(Looper.getMainLooper());
     private GpsTracker gps;
+    private boolean compactLayout;
     private TextView speedValue,speedStatus,clock,gpsChip;
     private final Runnable clockTicker=new Runnable(){
         @Override public void run(){
@@ -67,6 +68,10 @@ public final class MainActivity extends Activity {
         super.onCreate(state);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
             |WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        float density=getResources().getDisplayMetrics().density;
+        float widthDp=getResources().getDisplayMetrics().widthPixels/density;
+        float heightDp=getResources().getDisplayMetrics().heightPixels/density;
+        compactLayout=widthDp<800f||heightDp<500f;
         buildHome();
         gps=new GpsTracker(this,this::onGps);
     }
@@ -101,26 +106,26 @@ public final class MainActivity extends Activity {
     private void buildHome(){
         LinearLayout root=DriveUi.column(this);
         root.setBackground(background(0xff04101e,0xff071a2a,0,0,0));
-        DriveUi.pad(this,root,20,13);
+        DriveUi.pad(this,root,compactLayout?9:20,compactLayout?6:13);
         setContentView(root);
 
         LinearLayout header=DriveUi.row(this);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        root.addView(header,new LinearLayout.LayoutParams(-1,DriveUi.dp(this,71)));
+        root.addView(header,new LinearLayout.LayoutParams(-1,DriveUi.dp(this,compactLayout?53:71)));
 
         LinearLayout brand=DriveUi.column(this);
         brand.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout word=DriveUi.row(this);
         word.setGravity(Gravity.CENTER_VERTICAL);
-        TextView eaton=text("EATON",29,WHITE,true);
+        TextView eaton=text("EATON",compactLayout?21:29,WHITE,true);
         eaton.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
         eaton.setLetterSpacing(0.20f);
         word.addView(eaton);
-        TextView drive=text("DRIVE",29,CYAN,true);
+        TextView drive=text("DRIVE",compactLayout?21:29,CYAN,true);
         drive.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
         drive.setLetterSpacing(0.14f);
         LinearLayout.LayoutParams driveLp=new LinearLayout.LayoutParams(-2,-2);
-        driveLp.leftMargin=DriveUi.dp(this,13);
+        driveLp.leftMargin=DriveUi.dp(this,compactLayout?7:13);
         word.addView(drive,driveLp);
         brand.addView(word);
         View underline=new View(this);
@@ -129,7 +134,7 @@ public final class MainActivity extends Activity {
             new int[]{0xff3794c0,0xff20d9d4,0x001dd5d3}));
         LinearLayout.LayoutParams ulp=new LinearLayout.LayoutParams(
             -1,DriveUi.dp(this,1));
-        ulp.topMargin=DriveUi.dp(this,9);
+        ulp.topMargin=DriveUi.dp(this,compactLayout?6:9);
         brand.addView(underline,ulp);
         header.addView(brand,new LinearLayout.LayoutParams(0,-2,1f));
 
@@ -140,70 +145,79 @@ public final class MainActivity extends Activity {
         LinearLayout appDrawer=DriveUi.row(this);
         appDrawer.setGravity(Gravity.CENTER);
         appDrawer.setBackground(background(0xff10324a,0xff061d31,15,0xff21617b,1));
-        appDrawer.addView(symbol(SignatureIcon.APPS,31,CYAN));
+        appDrawer.addView(symbol(SignatureIcon.APPS,compactLayout?23:31,CYAN));
         appDrawer.setContentDescription("Open installed apps");
         appDrawer.setClickable(true);
         appDrawer.setOnClickListener(v->showApps());
         LinearLayout.LayoutParams drawerLp=new LinearLayout.LayoutParams(
-            DriveUi.dp(this,52),DriveUi.dp(this,48));
-        drawerLp.rightMargin=DriveUi.dp(this,27);
+            DriveUi.dp(this,compactLayout?40:52),DriveUi.dp(this,compactLayout?38:48));
+        drawerLp.rightMargin=DriveUi.dp(this,compactLayout?10:27);
         rightHeader.addView(appDrawer,drawerLp);
 
-        clock=text("",21,WHITE,true);
+        clock=text("",compactLayout?16:21,WHITE,true);
         clock.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
         rightHeader.addView(clock);
         View rule=new View(this);rule.setBackgroundColor(0xff1c6279);
         LinearLayout.LayoutParams lineLp=new LinearLayout.LayoutParams(
             DriveUi.dp(this,1),DriveUi.dp(this,25));
-        lineLp.leftMargin=DriveUi.dp(this,17);
-        lineLp.rightMargin=DriveUi.dp(this,17);
+        lineLp.leftMargin=DriveUi.dp(this,compactLayout?10:17);
+        lineLp.rightMargin=DriveUi.dp(this,compactLayout?10:17);
         rightHeader.addView(rule,lineLp);
-        gpsChip=text("● GPS",13,MUTED,true);
+        gpsChip=text("● GPS",compactLayout?11:13,MUTED,true);
         gpsChip.setLetterSpacing(0.08f);
         rightHeader.addView(gpsChip);
 
         LinearLayout body=DriveUi.row(this);
         LinearLayout.LayoutParams blp=new LinearLayout.LayoutParams(-1,0,1f);
-        blp.topMargin=DriveUi.dp(this,9);
+        blp.topMargin=DriveUi.dp(this,compactLayout?5:9);
         root.addView(body,blp);
 
         // Instrument-cluster-like speed panel with transparent blue Celerio.
         LinearLayout speedPanel=DriveUi.column(this);
         speedPanel.setGravity(Gravity.CENTER_HORIZONTAL);
         speedPanel.setBackground(background(0xff143c5c,0xff071b2d,21,0xff2f749f,2));
-        DriveUi.pad(this,speedPanel,12,17);
+        DriveUi.pad(this,speedPanel,compactLayout?8:12,compactLayout?7:17);
         LinearLayout.LayoutParams slp=new LinearLayout.LayoutParams(0,-1,0.85f);
-        slp.rightMargin=DriveUi.dp(this,12);
+        slp.rightMargin=DriveUi.dp(this,compactLayout?8:12);
         body.addView(speedPanel,slp);
 
-        TextView label=text("LIVE GPS SPEED",14,0xffc3d7e6,true);
+        TextView label=text("LIVE GPS SPEED",compactLayout?11:14,0xffc3d7e6,true);
         label.setLetterSpacing(0.19f);
         label.setGravity(Gravity.CENTER);
-        speedPanel.addView(label,new LinearLayout.LayoutParams(-1,DriveUi.dp(this,28)));
+        speedPanel.addView(label,new LinearLayout.LayoutParams(-1,DriveUi.dp(this,compactLayout?19:28)));
 
-        speedValue=text("—",94,WHITE,true);
+        speedValue=text("—",compactLayout?57:80,WHITE,true);
         speedValue.setTypeface(Typeface.create("sans-serif",Typeface.BOLD));
         speedValue.setGravity(Gravity.CENTER);
-        speedPanel.addView(speedValue,new LinearLayout.LayoutParams(-1,0,0.95f));
-        TextView mph=text("MPH",23,0xffd3e4f0,true);
+        // Fixed readout height: speed digits and MPH never jump when GPS changes.
+        speedValue.setSingleLine(true);
+        speedPanel.addView(speedValue,new LinearLayout.LayoutParams(
+            -1,DriveUi.dp(this,compactLayout?61:105)));
+        TextView mph=text("MPH",compactLayout?17:23,0xffd3e4f0,true);
         mph.setGravity(Gravity.CENTER);
         mph.setLetterSpacing(0.10f);
-        speedPanel.addView(mph,new LinearLayout.LayoutParams(-1,DriveUi.dp(this,29)));
+        speedPanel.addView(mph,new LinearLayout.LayoutParams(-1,DriveUi.dp(this,compactLayout?21:29)));
 
         ImageView car=new ImageView(this);
         car.setImageResource(R.drawable.celerio_side);
         car.setScaleType(ImageView.ScaleType.FIT_CENTER);
         car.setAlpha(0.94f);
+        car.setPadding(DriveUi.dp(this,compactLayout?3:13),
+            DriveUi.dp(this,compactLayout?1:8),
+            DriveUi.dp(this,compactLayout?3:13),
+            DriveUi.dp(this,compactLayout?1:8));
         car.setContentDescription("Light-blue 2017 Suzuki Celerio side profile");
-        speedPanel.addView(car,new LinearLayout.LayoutParams(-1,0,1.05f));
+        // All remaining flexible height belongs to the car, rather than making
+        // the speed digits compete with it. Image remains aspect-ratio-correct.
+        speedPanel.addView(car,new LinearLayout.LayoutParams(-1,0,1f));
 
         View lowerLine=new View(this);lowerLine.setBackgroundColor(0xff1b4c68);
         speedPanel.addView(lowerLine,new LinearLayout.LayoutParams(-1,DriveUi.dp(this,1)));
-        speedStatus=text("●  SEARCHING FOR GPS",12,MUTED,true);
+        speedStatus=text("●  SEARCHING FOR GPS",compactLayout?10:12,MUTED,true);
         speedStatus.setGravity(Gravity.CENTER);
         speedStatus.setLetterSpacing(0.07f);
         speedPanel.addView(speedStatus,new LinearLayout.LayoutParams(
-            -1,DriveUi.dp(this,42)));
+            -1,DriveUi.dp(this,compactLayout?26:42)));
 
         LinearLayout right=DriveUi.column(this);
         body.addView(right,new LinearLayout.LayoutParams(0,-1,1.18f));
@@ -215,28 +229,29 @@ public final class MainActivity extends Activity {
         nav.setContentDescription("Navigation. Offline maps. Plan a journey");
         nav.setOnClickListener(v->startActivity(new Intent(this,MapActivity.class)));
         LinearLayout.LayoutParams nlp=new LinearLayout.LayoutParams(-1,0,0.48f);
-        nlp.bottomMargin=DriveUi.dp(this,12);
+        nlp.bottomMargin=DriveUi.dp(this,compactLayout?8:12);
         right.addView(nav,nlp);
+        int navIconSize=compactLayout?63:98;
         LinearLayout.LayoutParams navIconLp=new LinearLayout.LayoutParams(
-            DriveUi.dp(this,102),DriveUi.dp(this,102));
-        navIconLp.leftMargin=DriveUi.dp(this,20);
-        nav.addView(symbol(SignatureIcon.NAVIGATION,102,CYAN),navIconLp);
+            DriveUi.dp(this,navIconSize),DriveUi.dp(this,navIconSize));
+        navIconLp.leftMargin=DriveUi.dp(this,compactLayout?10:20);
+        nav.addView(symbol(SignatureIcon.NAVIGATION,navIconSize,CYAN),navIconLp);
         LinearLayout navTexts=DriveUi.column(this);
         navTexts.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout.LayoutParams ntlp=new LinearLayout.LayoutParams(0,-1,1f);
-        ntlp.leftMargin=DriveUi.dp(this,13);
+        ntlp.leftMargin=DriveUi.dp(this,compactLayout?7:13);
         nav.addView(navTexts,ntlp);
-        TextView navTitle=text("NAVIGATION",27,WHITE,true);
+        TextView navTitle=text("NAVIGATION",compactLayout?17:27,WHITE,true);
         navTitle.setLetterSpacing(0.10f);
         navTexts.addView(navTitle);
-        TextView navSubtitle=text("Offline maps  •  Plan a journey",15,MUTED,false);
+        TextView navSubtitle=text("Offline maps  •  Plan a journey",compactLayout?11:15,MUTED,false);
         LinearLayout.LayoutParams nsLp=new LinearLayout.LayoutParams(-2,-2);
-        nsLp.topMargin=DriveUi.dp(this,12);
+        nsLp.topMargin=DriveUi.dp(this,compactLayout?6:12);
         navTexts.addView(navSubtitle,nsLp);
         LinearLayout.LayoutParams chevLp=new LinearLayout.LayoutParams(
-            DriveUi.dp(this,29),DriveUi.dp(this,29));
-        chevLp.rightMargin=DriveUi.dp(this,19);
-        nav.addView(symbol(SignatureIcon.CHEVRON,29,0xffa7e9ee),chevLp);
+            DriveUi.dp(this,compactLayout?17:29),DriveUi.dp(this,compactLayout?17:29));
+        chevLp.rightMargin=DriveUi.dp(this,compactLayout?9:19);
+        nav.addView(symbol(SignatureIcon.CHEVRON,compactLayout?17:29,0xffa7e9ee),chevLp);
 
         LinearLayout shortcuts=DriveUi.row(this);
         right.addView(shortcuts,new LinearLayout.LayoutParams(-1,0,0.52f));
@@ -246,11 +261,11 @@ public final class MainActivity extends Activity {
 
         LinearLayout footer=DriveUi.row(this);
         footer.setGravity(Gravity.CENTER_VERTICAL);
-        root.addView(footer,new LinearLayout.LayoutParams(-1,DriveUi.dp(this,34)));
-        TextView footerText=text("OFFLINE-FIRST   •   EATON SYSTEMS",11,MUTED,true);
+        root.addView(footer,new LinearLayout.LayoutParams(-1,DriveUi.dp(this,compactLayout?24:34)));
+        TextView footerText=text("OFFLINE-FIRST   •   EATON SYSTEMS",compactLayout?9:11,MUTED,true);
         footerText.setLetterSpacing(0.09f);
         footer.addView(footerText,new LinearLayout.LayoutParams(0,-2,1f));
-        TextView settings=text("SETTINGS  ⚙",12,CYAN,true);
+        TextView settings=text("SETTINGS  ⚙",compactLayout?10:12,CYAN,true);
         settings.setPadding(DriveUi.dp(this,15),DriveUi.dp(this,4),0,DriveUi.dp(this,4));
         settings.setOnClickListener(v->openSystemMenu());
         footer.addView(settings);
@@ -262,18 +277,18 @@ public final class MainActivity extends Activity {
         LinearLayout tile=DriveUi.column(this);
         tile.setGravity(Gravity.CENTER);
         interactiveBackground(tile,false);
-        tile.addView(symbol(icon,67,CYAN));
-        TextView text=text(name,20,WHITE,true);
+        tile.addView(symbol(icon,compactLayout?38:60,CYAN));
+        TextView text=text(name,compactLayout?14:19,WHITE,true);
         text.setLetterSpacing(0.08f);text.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams labelLp=new LinearLayout.LayoutParams(-1,-2);
-        labelLp.topMargin=DriveUi.dp(this,17);
+        labelLp.topMargin=DriveUi.dp(this,compactLayout?7:15);
         tile.addView(text,labelLp);
         tile.setContentDescription(name+" — tap to open, long press to choose app");
         tile.setClickable(true);
         tile.setOnClickListener(v->launchAssigned(key));
         tile.setOnLongClickListener(v->{chooseApp(key);return true;});
         LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,-1,1f);
-        if(!last)p.rightMargin=DriveUi.dp(this,11);
+        if(!last)p.rightMargin=DriveUi.dp(this,compactLayout?7:11);
         parent.addView(tile,p);
     }
     private void onGps(Integer mph,String state,Location location){
