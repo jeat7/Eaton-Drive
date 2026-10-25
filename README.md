@@ -1,4 +1,4 @@
-# Eaton Drive v0.9.1 — improved offline house-number search and foreground guidance
+# Eaton Drive v0.9.3 — improved unmapped-house navigation fallbacks
 
 A native Java Android launcher and experimental offline sat-nav for the 2015–2018 Suzuki Celerio's third-party Rimoodly head unit, advertised as Android 11, 1024×600, 1GB RAM, 16GB storage.
 
@@ -58,3 +58,11 @@ Navigation is foreground-only and stops GPS when MapActivity loses focus; it doe
 - Removed the old generic "Crayford Road" error from unrelated searches. If an exact house isn't in the installed region, the destination search offers a **SEARCH STREET** fallback.
 - Tested the exact indexed SQL against **both** released West Midlands address databases (v1 and v2): 218 Kingstanding Road, Kingstanding Road and Crayford Road all resolve. Java tests assert the new column-specific query expressions.
 - **No map, postcode, routing tile or address index reimport required** when an APK can be installed over the existing package. Back up offline files before an uninstall as debug APK signatures may change.
+
+
+## v0.9.3 — missing house numbers
+- Direct searches such as **218 Kingstanding Road** resolve exactly when OpenStreetMap contains a house entry.
+- **40 Crayford Road** is not in either West Midlands OSM-derived address index (there are zero recorded house numbers for Crayford Road), although the street itself is present. The correct public postcode can be entered separately if known; the database cannot infer a verified building entrance.
+- When exact address search returns no matching house, the destination-first search now offers **FIND STREET** or **USE POSTCODE**. For the latter, an explicit notice says that the postcode centre is approximate and not the verified entrance. It never presents a road centre or interpolated house as a confirmed building location.
+- Existing map, postcode, address and route packs remain compatible; no data-file changes are required after an in-place update. Prior debug builds may still need uninstall due to temporary signing keys.
+- Suggested next milestones: better offline address coverage and saved favourites/Home, followed by continued real-device GPS, spoken turn and foreground service validation.
