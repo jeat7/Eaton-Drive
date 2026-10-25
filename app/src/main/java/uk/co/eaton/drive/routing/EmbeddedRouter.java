@@ -46,23 +46,43 @@ public final class EmbeddedRouter {
         return files == null ? 0 : files.length;
     }
 
+    /**
+     * BRouter requires car-vario.brf and lookups.dat in the same directory.
+     * Both are included as assets and installed on first route calculation.
+     */
     private File profileFile() throws Exception {
-        File file = new File(context.getFilesDir(), "routing-profiles/" + PROFILE);
-        if (!file.isFile() || file.length() < 1024) {
-            File parent = file.getParentFile();
-            if (!parent.exists() && !parent.mkdirs()) throw new IllegalStateException("Cannot prepare driving profile");
-            File part = new File(parent, PROFILE + ".tmp");
-            try (InputStream input = context.getAssets().open("brouter/" + PROFILE);
-                 FileOutputStream out = new FileOutputStream(part)) {
+        File directory = new File(context.getFilesDir(), "routing-profiles");
+        if (!directory.exists() && !directory.mkdirs())
+            throw new IllegalStateException("Cannot create internal routing configuration");
+        File lookup = new File(directory, "lookups.dat");
+        File profile = new File(directory, PROFILE);
+        installAssetIfMissing("brouter/lookups.dat", lookup, 10_000);
+        installAssetIfMissing("brouter/" + PROFILE, profile, 1024);
+        return profile;
+    }
+
+    private void installAssetIfMissing(String asset, File target, long minSize) throws Exception {
+        if (target.isFile() && target.length() >= minSize) return;
+        File temporary = new File(target.getParentFile(), target.getName() + ".incoming");
+        try {
+            try (InputStream input = context.getAssets().open(asset);
+                 FileOutputStream output = new FileOutputStream(temporary)) {
                 byte[] buffer = new byte[8192];
-                int n;
-                while ((n = input.read(buffer)) != -1) out.write(buffer, 0, n);
-                out.getFD().sync();
+                int count;
+                while ((count = input.read(buffer)) != -1) {
+                    if (count > 0) output.write(buffer, 0, count);
+                }
+                output.getFD().sync();
             }
-            if (file.exists() && !file.delete()) throw new IllegalStateException("Cannot update driving profile");
-            if (!part.renameTo(file)) throw new IllegalStateException("Could not activate driving profile");
+            if (temporary.length() < minSize)
+                throw new IllegalStateException("Invalid bundled routing file: " + asset);
+            if (target.exists() && !target.delete())
+                throw new IllegalStateException("Cannot update routing configuration: " + target.getName());
+            if (!temporary.renameTo(target))
+                throw new IllegalStateException("Cannot activate routing configuration: " + target.getName());
+        } finally {
+            if (temporary.exists()) temporary.delete();
         }
-        return file;
     }
 
     public void request(RouteParser.Point start, RouteParser.Point finish, Callback callback) {

@@ -1,4 +1,4 @@
-# Eaton Drive v0.6 — offline routing integrated
+# Eaton Drive v0.6.1 — embedded BRouter with lookup table fix
 
 Native Android 11-compatible landscape launcher for the Rimoodly 9-inch 1024×600 Suzuki Celerio head unit (advertised 1GB RAM, 16GB flash).
 
@@ -77,3 +77,9 @@ Use **B1 1BB** (Birmingham) or **SW1A 1AA** (London) to verify the embedded look
 - No Internet permission, no firmware flashing, no account, no vendor BRouter installation.
 - You may need to back up your maps and other app data before uninstalling a debug build; debug APK signing keys may differ between builds.
 - Warning: route correctness on an actual vehicle is not yet validated. Use only for stationary testing until verified.
+
+
+## v0.6.1 routing startup fix
+The BRouter offline engine requires a matching `lookups.dat` beside its car driving profile. v0.6 omitted that configuration and could report `FileNotFoundException: .../routing-profiles/lookups.dat` even when road tiles were installed. The pinned BRouter 1.7.10 file is now bundled automatically at APK build time and installed into Eaton Drive's private routing profile directory before the route engine starts. Reimporting `.rd5` files is **not** required to correct the missing lookup table.
+
+After updating from v0.6 to v0.6.1, open Navigation, select a postcode and press START ROUTE. If you see a new error, capture its exact wording. Route calculation, road snapping, voice directions and turn validation still need phone and in-car tests before driving use.

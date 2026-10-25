@@ -8,8 +8,8 @@ android {
         applicationId 'uk.co.eaton.drive'
         minSdk 23
         targetSdk 32
-        versionCode 7
-        versionName '0.6.0'
+        versionCode 8
+        versionName '0.6.1'
     }
     sourceSets {
         main {

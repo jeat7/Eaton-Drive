@@ -21,8 +21,11 @@ jobs:
         run: |
           mkdir -p app/src/main/assets/brouter
           cp vendor/brouter/misc/profiles2/car-vario.brf app/src/main/assets/brouter/car-vario.brf
+          cp vendor/brouter/misc/profiles2/lookups.dat app/src/main/assets/brouter/lookups.dat
           cp vendor/brouter/LICENSE app/src/main/assets/brouter/LICENSE.txt
           test -s app/src/main/assets/brouter/car-vario.brf
+          test -s app/src/main/assets/brouter/lookups.dat
+          grep -q '^---lookupversion:' app/src/main/assets/brouter/lookups.dat
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
