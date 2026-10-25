@@ -602,17 +602,26 @@ public final class MapActivity extends Activity {
                     uk.co.eaton.drive.address.AddressQuery.Parts parts =
                         uk.co.eaton.drive.address.AddressQuery.parse(query);
                     String problem=addressStore.lastSearchError();
-                    String detail=(problem!=null&&!problem.isEmpty())
-                        ? "Offline search error: "+problem+"\n\nCheck the regional index in SETUP."
-                        : "No results for \""+query+"\" in the installed regional index. "
-                            + "The map may not contain every house number. "
-                            + "Try the street name without the number, or use a postcode.";
+                    boolean hasProblem=problem!=null&&!problem.isEmpty();
+                    String detail=hasProblem
+                        ? "Offline address search error: "+problem+"\n\nCheck SETUP for the installed regional index."
+                        : "House numbers are not available for every road in the offline OpenStreetMap index. "
+                            + "We cannot reliably locate \\""+query+"\\" to a front door. "
+                            + "You can select the approximate street position or enter a full postcode.";
                     AlertDialog.Builder dialog=new AlertDialog.Builder(this)
-                        .setTitle("Address not found").setMessage(detail);
-                    if(parts.hasHouse())
-                        dialog.setPositiveButton("SEARCH STREET",
+                        .setTitle(hasProblem?"Address search error":"Exact address not mapped")
+                        .setMessage(detail);
+                    if(!hasProblem && parts.hasHouse()){
+                        dialog.setPositiveButton("FIND STREET",
                             (d,w)->findDestination(parts.street));
-                    else dialog.setPositiveButton("OK",null);
+                        dialog.setNeutralButton("USE POSTCODE",
+                            (d,w)->promptPostcodeFallback(query));
+                    }else if(!hasProblem){
+                        dialog.setPositiveButton("USE POSTCODE",
+                            (d,w)->promptPostcodeFallback(query));
+                    }else{
+                        dialog.setPositiveButton("SETUP",(d,w)->openSetup());
+                    }
                     dialog.setNegativeButton("Close",null).show();
                     status.setText("No matching offline address");
                     return;
@@ -632,6 +641,34 @@ public final class MapActivity extends Activity {
                     }).setNegativeButton("Cancel",null).show();
             });
         });
+    }
+    /** Explicit fallback when OpenStreetMap has the road but not a specific house. */
+    private void promptPostcodeFallback(String originalSearch) {
+        EditText input=new EditText(this);
+        input.setSingleLine(true);
+        input.setHint("e.g. B44 0TP");
+        input.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS);
+        new AlertDialog.Builder(this)
+            .setTitle("Use a postcode instead")
+            .setMessage("The house \\""+originalSearch+"\\" isn't mapped. "
+                + "Enter its known full postcode. This chooses an approximate postcode location, "
+                + "not a verified front door or vehicle entrance.")
+            .setView(input)
+            .setPositiveButton("CONTINUE",(d,w)->{
+                String postcode=input.getText().toString().trim().toUpperCase(Locale.UK);
+                if(!PostcodeCsv.plausible(PostcodeCsv.normalise(postcode))){
+                    status.setText("Enter a valid full UK postcode");
+                    Toast.makeText(this,"Enter a full postcode, e.g. B44 0TP",Toast.LENGTH_LONG).show();
+                    return;
+                }
+                new AlertDialog.Builder(this)
+                    .setTitle("Approximate postcode destination")
+                    .setMessage("Navigate towards the centre of "+postcode+"? "
+                        + "It may not be the entrance to the property. "
+                        + "Check the map and adjust the pin before driving if needed.")
+                    .setPositiveButton("USE POSTCODE",(confirm,button)->findDestination(postcode))
+                    .setNegativeButton("Cancel",null).show();
+            }).setNegativeButton("Cancel",null).show();
     }
     private void enterPostcode() {
         if (!postcodes.installed()) {
