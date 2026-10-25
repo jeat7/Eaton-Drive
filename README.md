@@ -1,4 +1,4 @@
-# Eaton Drive v0.9 — destination-first navigation and foreground spoken guidance
+# Eaton Drive v0.9.1 — improved offline house-number search and foreground guidance
 
 A native Java Android launcher and experimental offline sat-nav for the 2015–2018 Suzuki Celerio's third-party Rimoodly head unit, advertised as Android 11, 1024×600, 1GB RAM, 16GB storage.
 
@@ -49,3 +49,12 @@ Navigation is foreground-only and stops GPS when MapActivity loses focus; it doe
 - VOICE / MUTE setting is shared with the service and persisted.
 - Automated unit tests cover next-turn banner labels and remaining-time calculations.
 - **Not validated in the car:** Android ROM may restrict services/audio, and spoken hints, actual navigation reliability, reverse camera and OEM radio must be checked before driving. Continue testing stationary/passenger-only.
+
+
+## v0.9.1 address search correction
+- A query like `218 Kingstanding Road` is now treated as **house number 218 on Kingstanding Road**, not a generic full-text match across house, locality, postcode district and other unrelated columns.
+- The local FTS4 query limits street words to the `name` field and an optional house number to the `house` field. The Android-compatible SQL fallback makes the same distinction, even if the phone's FTS implementation behaves differently.
+- Generic street searches such as `Kingstanding Road` show a street/road location before hundreds of individual house numbers.
+- Removed the old generic "Crayford Road" error from unrelated searches. If an exact house isn't in the installed region, the destination search offers a **SEARCH STREET** fallback.
+- Tested the exact indexed SQL against **both** released West Midlands address databases (v1 and v2): 218 Kingstanding Road, Kingstanding Road and Crayford Road all resolve. Java tests assert the new column-specific query expressions.
+- **No map, postcode, routing tile or address index reimport required** when an APK can be installed over the existing package. Back up offline files before an uninstall as debug APK signatures may change.
