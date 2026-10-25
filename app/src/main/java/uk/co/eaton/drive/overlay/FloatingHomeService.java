@@ -16,6 +16,7 @@ import android.graphics.Point;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.SystemClock;
+import android.content.SharedPreferences;
 import android.provider.Settings;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -39,6 +40,9 @@ public final class FloatingHomeService extends Service {
     public static final String ACTION_HIDE="uk.co.eaton.drive.overlay.HIDE";
     public static final String PREFS="eaton_overlay_settings";
     public static final String ENABLED="enabled";
+    public static final String LAST_STATUS="last_status";
+    public static final String LAST_ERROR="last_error";
+    public static final String LAST_EVENT="last_event";
 
     private static final String CHANNEL="eaton_floating_home";
     private static final int NOTIFICATION_ID=1702;
@@ -46,6 +50,26 @@ public final class FloatingHomeService extends Service {
     private WindowManager.LayoutParams params;
     private View bubble;
     private boolean foreground;
+    private boolean intentionalStop;
+    private void record(String status,String error){
+        getSharedPreferences(PREFS,MODE_PRIVATE).edit()
+            .putString(LAST_STATUS,status)
+            .putString(LAST_ERROR,error==null?"":error)
+            .putLong(LAST_EVENT,System.currentTimeMillis()).apply();
+    }
+    public static String diagnostics(Context context){
+        SharedPreferences p=context.getSharedPreferences(PREFS,MODE_PRIVATE);
+        String state=p.getString(LAST_STATUS,"Not started");
+        String error=p.getString(LAST_ERROR,"");
+        long at=p.getLong(LAST_EVENT,0L);
+        return "Enabled: "+(enabled(context)?"YES":"NO")
+            +"\nOverlay permission: "+(permitted(context)?"GRANTED":"NOT GRANTED")
+            +"\nLast service state: "+state
+            +(error.isEmpty()?"":"\nLast error: "+error)
+            +(at<=0?"":"\nLast service event: "+
+                new java.text.SimpleDateFormat("HH:mm:ss",java.util.Locale.UK).format(
+                    new java.util.Date(at)));
+    }
 
     public static boolean enabled(Context context) {
         return context.getSharedPreferences(PREFS,MODE_PRIVATE)
@@ -77,18 +101,33 @@ public final class FloatingHomeService extends Service {
 
     @Override public int onStartCommand(Intent intent,int flags,int startId){
         if(intent==null||ACTION_HIDE.equals(intent.getAction())){
+            intentionalStop=true;
+            record("Hidden by user or system","");stopSelf();return START_NOT_STICKY;
+        }
+        if(!ACTION_SHOW.equals(intent.getAction())){
+            intentionalStop=true;
+            record("Rejected unknown action","");stopSelf();return START_NOT_STICKY;
+        }
+        if(!enabled(this)||!permitted(this)){
+            intentionalStop=true;
+            record("Not enabled or overlay permission missing","");
             stopSelf();return START_NOT_STICKY;
         }
-        if(!ACTION_SHOW.equals(intent.getAction())||!enabled(this)||!permitted(this)){
-            stopSelf();return START_NOT_STICKY;
+        if(bubble!=null){
+            record("Visible","");
+            return START_NOT_STICKY;
         }
-        if(bubble!=null)return START_NOT_STICKY;
         try{
             startForeground(NOTIFICATION_ID,notification());
             foreground=true;
             displayBubble();
+            record("Visible","");
         }catch(Exception ex){
-            Toast.makeText(this,"Floating Home unavailable on this stereo",Toast.LENGTH_SHORT).show();
+            String details=ex.getClass().getSimpleName()
+                +(ex.getMessage()==null?"":": "+ex.getMessage());
+            record("Start failed",details);
+            Toast.makeText(this,"Floating Home unavailable: "+ex.getClass().getSimpleName(),
+                Toast.LENGTH_LONG).show();
             stopSelf();
         }
         return START_NOT_STICKY; // Never resurrect over arbitrary screens after process restart.
@@ -212,8 +251,25 @@ public final class FloatingHomeService extends Service {
 
     @Override public void onConfigurationChanged(Configuration newConfig){
         super.onConfigurationChanged(newConfig);
-        // Remove overlays on orientation/reverse-camera display-mode transitions.
-        stopSelf();
+        // The Eaton launcher is landscape and many Android music apps are
+        // portrait. Stopping the service on *every* orientation change made
+        // the Home button disappear as soon as music opened.
+        // Instead keep the opt-in bubble visible and clamp it within the new
+        // display dimensions. A user can always hide it via the notification.
+        if(manager==null||bubble==null||params==null)return;
+        try{
+            Point bounds=new Point();
+            manager.getDefaultDisplay().getSize(bounds);
+            params.x=Math.max(0,Math.min(params.x,Math.max(0,bounds.x-dp(48))));
+            params.y=Math.max(0,Math.min(params.y,Math.max(0,bounds.y-dp(48))));
+            manager.updateViewLayout(bubble,params);
+            bubble.setOnTouchListener(new DragListener(bounds));
+            record("Visible after display rotation","");
+        }catch(RuntimeException error){
+            record("Rotation update failed",error.getClass().getSimpleName()+
+                (error.getMessage()==null?"":": "+error.getMessage()));
+            stopSelf();
+        }
     }
     @Override public void onDestroy(){
         if(manager!=null&&bubble!=null){
@@ -221,6 +277,9 @@ public final class FloatingHomeService extends Service {
             bubble=null;
         }
         if(foreground)stopForeground(true);
+        if(!intentionalStop && "Visible".equals(
+            getSharedPreferences(PREFS,MODE_PRIVATE).getString(LAST_STATUS,"")))
+            record("Stopped by Android or launcher","");
         super.onDestroy();
     }
 }
