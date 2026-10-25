@@ -80,9 +80,18 @@ public final class AddressStore {
                 output.getFD().sync();
             }
             if (!valid(temp)) throw new IOException("File is not a valid Eaton Drive address .db index");
-            // Replacing an already open DB is unsafe; lookups are short-lived and close immediately.
-            if (target.exists() && !target.delete()) throw new IOException("Cannot replace existing search index");
-            if (!temp.renameTo(target)) throw new IOException("Cannot activate address search index");
+            // Preserve the previous search index if activation fails, e.g. low storage.
+            File backup = new File(dir,"addresses-backup.db");
+            if (backup.exists() && !backup.delete())
+                throw new IOException("Cannot clear previous address backup");
+            if (target.exists() && !target.renameTo(backup))
+                throw new IOException("Cannot back up current address index");
+            if (!temp.renameTo(target)) {
+                if (backup.exists() && !backup.renameTo(target))
+                    throw new IOException("Cannot activate new index or restore previous index");
+                throw new IOException("Cannot activate new address index; previous index restored");
+            }
+            if (backup.exists()) backup.delete();
             return "Offline street and address search ready";
         } finally {
             if (temp.exists()) temp.delete();
